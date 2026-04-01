@@ -12,7 +12,7 @@
 //     Project URL and anon/public key from:
 //       Supabase Dashboard → Project Settings → API
 // -------------------------------------------------------
-const SUPABASE_URL  = "https://supabase.com/dashboard/project/emlogmnygnpvtzfgyjet";  // <-- replace
+const SUPABASE_URL  = "https://emlogmnygnpvtzfgyjet.supabase.co";  // <-- replace
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbG9nbW55Z25wdnR6Zmd5amV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MDcwNzUsImV4cCI6MjA5MDM4MzA3NX0.xBe-Bmww1HTEpth3iUKfSGnXfwRejiSoV_COymxo-hE";               // <-- replace
 
 // Initialise the client (supabase-js is loaded via the CDN

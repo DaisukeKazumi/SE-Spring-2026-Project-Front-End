@@ -1,1 +1,17 @@
+BACKEND
+- Let users create accounts ✅
+  - Let users recover accounts if they forgot passwords
+- Let users make posts ✅
+- Make the server live (not only run locally)
+  - Let users see each others post somehow
+  - Make a home feed
+    - Create an algorithm?
 
+
+FRONTEND
+- Make a home feed
+
+
+LINKS
+Table of all posts
+  https://supabase.com/dashboard/project/emlogmnygnpvtzfgyjet/editor/20912?schema=public&sort=user_id%3Aasc&sort=created_at%3Aasc 

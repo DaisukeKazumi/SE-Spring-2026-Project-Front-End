@@ -1,0 +1,1 @@
+Right click on index.html to run the website

@@ -61,7 +61,7 @@ async function logoutUser() {
 //     Supabase table.  Add/remove columns as needed.
 // -------------------------------------------------------
 
-const TABLE_NAME = "public.posts"; // <-- replace with your table name
+const TABLE_NAME = "posts"; // <-- replace with your table name
 
 /**
  * Insert a single row into the table.

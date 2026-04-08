@@ -13,5 +13,7 @@ FRONTEND
 
 
 LINKS
-Table of all posts
+Supabase home page: 
+  https://supabase.com/dashboard/project/emlogmnygnpvtzfgyjet
+Table of all posts: 
   https://supabase.com/dashboard/project/emlogmnygnpvtzfgyjet/editor/20912?schema=public&sort=user_id%3Aasc&sort=created_at%3Aasc 

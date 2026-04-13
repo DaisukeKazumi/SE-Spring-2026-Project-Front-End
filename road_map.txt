@@ -2,14 +2,19 @@ BACKEND
 - Let users create accounts ✅
   - Let users recover accounts if they forgot passwords
 - Let users make posts ✅
-- Make the server live (not only run locally)
+- Make the server live (not only run locally) ✅
   - Let users see each others post somehow
   - Make a home feed
     - Create an algorithm?
+- Ask prof how to get email/password information
+- Add some liking/commenting function
 
 
 FRONTEND
 - Make a home feed
+- Category for most popular posts
+  - Find a way to artificially inflate numbers for the sake of testing
+- Allow users to change their view of their feed (i.e. dark mode, etc.)
 
 
 LINKS

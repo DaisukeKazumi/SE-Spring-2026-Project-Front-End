@@ -326,7 +326,17 @@ function extractYouTubeId(url) {
 
 function formatTime(isoString) {
   var d = new Date(isoString);
-  return d.toLocaleString();
+  var now = Date.now();
+  var diff = now - d.getTime(); // ms
+  if (diff < 60000)  return "just now";
+  if (diff < 3600000) return Math.floor(diff / 60000) + " min ago";
+  if (diff < 86400000) return Math.floor(diff / 3600000) + " h ago";
+  if (diff < 604800000) return Math.floor(diff / 86400000) + " d ago";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function fullDateTime(isoString) {
+  return new Date(isoString).toLocaleString();
 }
 
 // -------------------------------------------------------
@@ -378,27 +388,72 @@ function createPostCard(post) {
   card.className = "post-card";
   card.dataset.postId = post.id;
 
-  // Header: author + time
+  // ── Header ──────────────────────────────────────────────
   var header = document.createElement("div");
   header.className = "post-header";
 
+  // Left side: avatar + meta
+  var headerLeft = document.createElement("div");
+  headerLeft.className = "post-header-left";
+
+  // Avatar circle with first letter of username
+  var displayName = getDisplayName(post.user_id);
+  var avatar = document.createElement("div");
+  avatar.className = "post-avatar";
+  var initials = displayName.replace(/^@/, "").charAt(0).toUpperCase() || "?";
+  avatar.textContent = initials;
+
+  // Username + timestamp stacked
+  var meta = document.createElement("div");
+  meta.className = "post-meta";
+
   var author = document.createElement("span");
   author.className = "post-author";
-  author.textContent = getDisplayName(post.user_id);
+  author.textContent = displayName;
 
   var time = document.createElement("span");
   time.className = "post-time";
-  time.textContent = "posted at " + formatTime(post.created_at);
+  time.textContent = formatTime(post.created_at);
+  time.title = fullDateTime(post.created_at); // full date on hover
 
-  header.appendChild(author);
-  header.appendChild(time);
+  meta.appendChild(author);
+  meta.appendChild(time);
 
-  // Content
+  headerLeft.appendChild(avatar);
+  headerLeft.appendChild(meta);
+
+  // Right side: edit/delete (only for post author)
+  var headerRight = document.createElement("div");
+  headerRight.className = "post-header-right";
+
+  if (currentUser && currentUser.id === post.user_id) {
+    var editBtn = document.createElement("button");
+    editBtn.className = "btn btn-tiny btn-secondary";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", function () {
+      openEditPostModal(post);
+    });
+
+    var deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn btn-tiny btn-danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", function () {
+      handleDeletePost(post.id);
+    });
+
+    headerRight.appendChild(editBtn);
+    headerRight.appendChild(deleteBtn);
+  }
+
+  header.appendChild(headerLeft);
+  header.appendChild(headerRight);
+
+  // ── Content ──────────────────────────────────────────────
   var content = document.createElement("div");
   content.className = "post-content";
   content.appendChild(renderSafeContentNodes(post.content));
 
-  // Actions bar: like + comment count
+  // ── Action bar: like + comments ──────────────────────────
   var actions = document.createElement("div");
   actions.className = "post-actions";
 
@@ -419,7 +474,8 @@ function createPostCard(post) {
   // Comment toggle
   var commentBtn = document.createElement("button");
   commentBtn.className = "btn-comment-toggle";
-  commentBtn.textContent = "💬 Comments (" + (post.comment_count || 0) + ")";
+  commentBtn.textContent = "💬 " + (post.comment_count || 0);
+  commentBtn.title = "Toggle comments";
   commentBtn.addEventListener("click", function () {
     toggleComments(post.id, card);
   });
@@ -427,39 +483,14 @@ function createPostCard(post) {
   actions.appendChild(likeBtn);
   actions.appendChild(commentBtn);
 
-  // Author controls (edit/delete)
-  var controls = null;
-  if (currentUser && currentUser.id === post.user_id) {
-    controls = document.createElement("div");
-    controls.className = "post-controls";
-
-    var editBtn = document.createElement("button");
-    editBtn.className = "btn btn-small btn-secondary";
-    editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", function () {
-      openEditPostModal(post);
-    });
-
-    var deleteBtn = document.createElement("button");
-    deleteBtn.className = "btn btn-small btn-danger";
-    deleteBtn.textContent = "Delete";
-    deleteBtn.addEventListener("click", function () {
-      handleDeletePost(post.id);
-    });
-
-    controls.appendChild(editBtn);
-    controls.appendChild(deleteBtn);
-  }
-
-  // Comments section (hidden by default)
+  // ── Comments section (hidden by default) ─────────────────
   var commentsSection = document.createElement("div");
   commentsSection.className = "comments-section hidden";
   commentsSection.id = "comments-" + post.id;
 
-  // Assemble card
+  // ── Assemble ─────────────────────────────────────────────
   card.appendChild(header);
   card.appendChild(content);
-  if (controls) card.appendChild(controls);
   card.appendChild(actions);
   card.appendChild(commentsSection);
 

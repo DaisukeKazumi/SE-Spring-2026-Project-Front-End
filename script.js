@@ -285,7 +285,7 @@ function renderSafeContentNodes(text) {
       iframe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;border:0;border-radius:8px;";
       iframe.setAttribute("allowfullscreen", "");
       iframe.setAttribute("loading", "lazy");
-      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation");
+      iframe.setAttribute("sandbox", "allow-scripts allow-presentation");
       wrapper.appendChild(iframe);
       fragment.appendChild(wrapper);
     } else {
@@ -315,7 +315,7 @@ function renderSafeContentNodes(text) {
  */
 function extractYouTubeId(url) {
   var patterns = [
-    /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+    /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{10,12})/
   ];
   for (var i = 0; i < patterns.length; i++) {
     var m = url.match(patterns[i]);

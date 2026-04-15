@@ -8,64 +8,49 @@
 
 // -------------------------------------------------------
 // 1.  SUPABASE CLIENT CONFIGURATION
-//     Replace the placeholder values below with the real
-//     Project URL and anon/public key from:
-//       Supabase Dashboard → Project Settings → API
 // -------------------------------------------------------
 const SUPABASE_URL  = "https://emlogmnygnpvtzfgyjet.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbG9nbW55Z25wdnR6Zmd5amV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MDcwNzUsImV4cCI6MjA5MDM4MzA3NX0.xBe-Bmww1HTEpth3iUKfSGnXfwRejiSoV_COymxo-hE";               // <-- replace
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtbG9nbW55Z25wdnR6Zmd5amV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MDcwNzUsImV4cCI6MjA5MDM4MzA3NX0.xBe-Bmww1HTEpth3iUKfSGnXfwRejiSoV_COymxo-hE";
 
-// Initialise the client (supabase-js is loaded via the CDN
-// script tag in index.html and exposed as window.supabase).
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // -------------------------------------------------------
-// 2.  AUTH HELPERS
+// 2.  CONSTANTS
+// -------------------------------------------------------
+const MAX_POST_WORDS = 1024;
+const MIN_USERNAME_LENGTH = 3;
+
+// Current user state
+let currentUser = null;
+// Cache: user_id -> username
+let usernameCache = {};
+// Cache: post_id -> true (posts the current user has liked)
+let userLikes = {};
+
+// -------------------------------------------------------
+// 3.  AUTH HELPERS
 // -------------------------------------------------------
 
-/**
- * Sign up a new user with email and password.
- * @param {string} email
- * @param {string} password
- * @returns {Promise<{user: object|null, error: object|null}>}
- */
 async function signUpUser(email, password) {
   const { data, error } = await db.auth.signUp({ email, password });
   return { user: data?.user ?? null, error };
 }
 
-/**
- * Log in an existing user with email and password.
- * @param {string} email
- * @param {string} password
- * @returns {Promise<{user: object|null, error: object|null}>}
- */
 async function loginUser(email, password) {
   const { data, error } = await db.auth.signInWithPassword({ email, password });
   return { user: data?.user ?? null, error };
 }
 
-/**
- * Log out the currently authenticated user.
- * @returns {Promise<{error: object|null}>}
- */
 async function logoutUser() {
   const { error } = await db.auth.signOut();
   return { error };
 }
 
 // -------------------------------------------------------
-// 2b. PROFILE HELPERS
+// 4.  PROFILE HELPERS
 // -------------------------------------------------------
 
-const MIN_USERNAME_LENGTH = 3;
-
-/**
- * Fetch the profile row for a given user id.
- * @param {string} userId
- * @returns {Promise<{profile: object|null, error: object|null}>}
- */
 async function fetchProfile(userId) {
   const { data, error } = await db
     .from("profiles")
@@ -75,27 +60,16 @@ async function fetchProfile(userId) {
   return { profile: data ?? null, error };
 }
 
-/**
- * Normalize a raw username string: trim whitespace and lowercase.
- * @param {string} raw
- * @returns {string}
- */
 function normalizeUsername(raw) {
   return raw.trim().toLowerCase();
 }
 
-/**
- * Save (upsert) a username into public.profiles for the current user.
- * @param {string} userId
- * @param {string} rawUsername
- * @returns {Promise<{profile: object|null, error: object|null}>}
- */
 async function saveUsername(userId, rawUsername) {
   const username = normalizeUsername(rawUsername);
   if (username.length < MIN_USERNAME_LENGTH) {
     return {
       profile: null,
-      error: { message: `Username must be at least ${MIN_USERNAME_LENGTH} characters.` },
+      error: { message: "Username must be at least " + MIN_USERNAME_LENGTH + " characters." },
     };
   }
   const { data, error } = await db
@@ -106,11 +80,6 @@ async function saveUsername(userId, rawUsername) {
   return { profile: data ?? null, error };
 }
 
-/**
- * Check whether the user already has a username.
- * If not, show the username prompt overlay.
- * @param {object} user  The auth user object.
- */
 async function getOrPromptUsername(user) {
   const { profile, error } = await fetchProfile(user.id);
   if (error) {
@@ -120,109 +89,606 @@ async function getOrPromptUsername(user) {
     userInfo.textContent = "Signed in as: @" + profile.username;
     return;
   }
-  // Show the username overlay
   usernameOverlay.classList.remove("hidden");
 }
 
-// -------------------------------------------------------
-// 3.  DATABASE HELPERS
-//     Adjust the table name ("entries") to match your own
-//     Supabase table.  Add/remove columns as needed.
-// -------------------------------------------------------
-
-const TABLE_NAME = "posts"; // <-- replace with your table name
-
 /**
- * Insert a single row into the table.
- * @param {object} rowData  Plain object matching your table schema.
- *                          e.g. { content: "hello" }
- * @returns {Promise<{data: object[]|null, error: object|null}>}
+ * Fetch usernames for a list of user IDs and cache them.
  */
-async function insertData(rowData) {
-  const { data, error } = await db.from(TABLE_NAME).insert([rowData]).select();
-  return { data, error };
+async function fetchUsernames(userIds) {
+  const uncached = userIds.filter(function (id) { return !usernameCache[id]; });
+  if (uncached.length === 0) return;
+
+  const { data, error } = await db
+    .from("profiles")
+    .select("id, username")
+    .in("id", uncached);
+
+  if (error) {
+    console.error("Failed to fetch usernames:", error.message);
+    return;
+  }
+  if (data) {
+    data.forEach(function (p) {
+      usernameCache[p.id] = p.username || null;
+    });
+  }
 }
 
-/**
- * Fetch all rows from the table, ordered by created_at descending.
- * @returns {Promise<{data: object[]|null, error: object|null}>}
- */
-async function fetchData() {
+function getDisplayName(userId) {
+  var name = usernameCache[userId];
+  if (name && name.trim().length > 0) return "@" + name;
+  return "Anonymous";
+}
+
+// -------------------------------------------------------
+// 5.  POST HELPERS
+// -------------------------------------------------------
+
+async function fetchPosts() {
   const { data, error } = await db
-    .from(TABLE_NAME)
+    .from("posts_with_counters")
     .select("*")
     .order("created_at", { ascending: false });
   return { data, error };
 }
 
-// -------------------------------------------------------
-// 4.  UI HELPERS
-// -------------------------------------------------------
-
-/** Toggle visibility of the auth vs. data sections. */
-function showSection(section) {
-  authSection.classList.toggle("hidden", section !== "auth");
-  dataSection.classList.toggle("hidden", section !== "data");
+async function insertPost(content) {
+  const { data, error } = await db
+    .from("posts")
+    .insert([{ content: content }])
+    .select();
+  return { data, error };
 }
 
-/** Display a message under a form. */
-function setMessage(el, text, type = "") {
+async function updatePost(postId, content) {
+  const { data, error } = await db
+    .from("posts")
+    .update({ content: content })
+    .eq("id", postId)
+    .select();
+  return { data, error };
+}
+
+async function deletePost(postId) {
+  const { error } = await db
+    .from("posts")
+    .delete()
+    .eq("id", postId);
+  return { error };
+}
+
+// -------------------------------------------------------
+// 6.  COMMENT HELPERS
+// -------------------------------------------------------
+
+async function fetchComments(postId) {
+  const { data, error } = await db
+    .from("post_comments")
+    .select("*")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: true });
+  return { data, error };
+}
+
+async function insertComment(postId, content) {
+  const { data, error } = await db
+    .from("post_comments")
+    .insert([{ post_id: postId, content: content }])
+    .select();
+  return { data, error };
+}
+
+async function updateComment(commentId, content) {
+  const { data, error } = await db
+    .from("post_comments")
+    .update({ content: content, updated_at: new Date().toISOString() })
+    .eq("id", commentId)
+    .select();
+  return { data, error };
+}
+
+async function deleteComment(commentId) {
+  const { error } = await db
+    .from("post_comments")
+    .delete()
+    .eq("id", commentId);
+  return { error };
+}
+
+// -------------------------------------------------------
+// 7.  LIKE HELPERS
+// -------------------------------------------------------
+
+async function fetchUserLikes(userId) {
+  const { data, error } = await db
+    .from("post_likes")
+    .select("post_id")
+    .eq("user_id", userId);
+  if (error) {
+    console.error("Failed to fetch likes:", error.message);
+    return;
+  }
+  userLikes = {};
+  if (data) {
+    data.forEach(function (row) {
+      userLikes[row.post_id] = true;
+    });
+  }
+}
+
+async function likePost(postId) {
+  const { error } = await db
+    .from("post_likes")
+    .insert([{ post_id: postId, user_id: currentUser.id }]);
+  return { error };
+}
+
+async function unlikePost(postId) {
+  const { error } = await db
+    .from("post_likes")
+    .delete()
+    .eq("post_id", postId)
+    .eq("user_id", currentUser.id);
+  return { error };
+}
+
+// -------------------------------------------------------
+// 8.  TEXT / CONTENT HELPERS
+// -------------------------------------------------------
+
+function countWords(text) {
+  var trimmed = text.trim();
+  if (trimmed.length === 0) return 0;
+  return trimmed.split(/\s+/).length;
+}
+
+/**
+ * Safely render post/comment content with clickable links.
+ * Escapes HTML to prevent XSS, then converts URLs to <a> tags.
+ */
+function renderSafeContent(text) {
+  var escaped = escapeHtml(text);
+  // Only match http: and https: URLs
+  var urlPattern = /(\bhttps?:\/\/[^\s<>"']+)/gi;
+  var withLinks = escaped.replace(urlPattern, function (url) {
+    return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+  });
+  return withLinks;
+}
+
+function escapeHtml(str) {
+  var div = document.createElement("div");
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
+function formatTime(isoString) {
+  var d = new Date(isoString);
+  return d.toLocaleString();
+}
+
+// -------------------------------------------------------
+// 9.  UI HELPERS
+// -------------------------------------------------------
+
+function setMessage(el, text, type) {
+  if (!type) type = "";
   el.textContent = text;
   el.className = "message " + type;
 }
 
-/** Populate the data list from an array of row objects. */
-function renderDataList(rows) {
-  dataList.innerHTML = "";
-  if (!rows || rows.length === 0) {
-    dataList.innerHTML = "<li>No entries yet.</li>";
-    return;
+function showSection(section) {
+  authSection.classList.toggle("hidden", section !== "auth");
+}
+
+function updateWordCounter(textarea, counterEl) {
+  var words = countWords(textarea.value);
+  counterEl.textContent = words + " / " + MAX_POST_WORDS + " words";
+  if (words > MAX_POST_WORDS) {
+    counterEl.classList.add("over-limit");
+  } else {
+    counterEl.classList.remove("over-limit");
   }
-  rows.forEach((row) => {
-    const li = document.createElement("li");
-    // Show all column values joined by " — ", skipping id/timestamp columns
-    li.textContent = Object.entries(row)
-      .filter(([k]) => !["id", "created_at", "user_id"].includes(k))
-      .map(([, v]) => v)
-      .join(" — ");
-    dataList.appendChild(li);
-  });
 }
 
 // -------------------------------------------------------
-// 5.  ELEMENT REFERENCES
-// -------------------------------------------------------
-const authSection  = document.getElementById("auth-section");
-const dataSection  = document.getElementById("data-section");
-const emailInput   = document.getElementById("email");
-const passwordInput = document.getElementById("password");
-const signupBtn    = document.getElementById("signup-btn");
-const loginBtn     = document.getElementById("login-btn");
-const logoutBtn    = document.getElementById("logout-btn");
-const authMessage  = document.getElementById("auth-message");
-const insertForm   = document.getElementById("insert-form");
-const dataInput    = document.getElementById("data-input");
-const dataMessage  = document.getElementById("data-message");
-const dataList     = document.getElementById("data-list");
-const userInfo     = document.getElementById("user-info");
-const usernameOverlay = document.getElementById("username-overlay");
-const usernameForm    = document.getElementById("username-form");
-const usernameInput   = document.getElementById("username-input");
-const usernameSubmitBtn = document.getElementById("username-submit-btn");
-const usernameMessage = document.getElementById("username-message");
-
-// -------------------------------------------------------
-// 6.  EVENT LISTENERS
+// 10. FEED RENDERING
 // -------------------------------------------------------
 
-signupBtn.addEventListener("click", async () => {
-  const email    = emailInput.value.trim();
-  const password = passwordInput.value;
+function renderFeed(posts) {
+  feedList.innerHTML = "";
+  if (!posts || posts.length === 0) {
+    var p = document.createElement("p");
+    p.className = "feed-empty";
+    p.textContent = "No posts yet. Be the first to post!";
+    feedList.appendChild(p);
+    return;
+  }
+
+  posts.forEach(function (post) {
+    var card = createPostCard(post);
+    feedList.appendChild(card);
+  });
+}
+
+function createPostCard(post) {
+  var card = document.createElement("article");
+  card.className = "post-card";
+  card.dataset.postId = post.id;
+
+  // Header: author + time
+  var header = document.createElement("div");
+  header.className = "post-header";
+
+  var author = document.createElement("span");
+  author.className = "post-author";
+  author.textContent = getDisplayName(post.user_id);
+
+  var time = document.createElement("span");
+  time.className = "post-time";
+  time.textContent = "posted at " + formatTime(post.created_at);
+
+  header.appendChild(author);
+  header.appendChild(time);
+
+  // Content
+  var content = document.createElement("div");
+  content.className = "post-content";
+  content.innerHTML = renderSafeContent(post.content);
+
+  // Actions bar: like + comment count
+  var actions = document.createElement("div");
+  actions.className = "post-actions";
+
+  // Like button
+  var likeBtn = document.createElement("button");
+  likeBtn.className = "btn-like";
+  var isLiked = currentUser && userLikes[post.id];
+  if (isLiked) likeBtn.classList.add("liked");
+  likeBtn.textContent = (isLiked ? "♥ Liked" : "♡ Like") + " (" + (post.like_count || 0) + ")";
+  likeBtn.addEventListener("click", function () {
+    handleLikeToggle(post.id, likeBtn);
+  });
+
+  // Comment toggle
+  var commentBtn = document.createElement("button");
+  commentBtn.className = "btn-comment-toggle";
+  commentBtn.textContent = "💬 Comments (" + (post.comment_count || 0) + ")";
+  commentBtn.addEventListener("click", function () {
+    toggleComments(post.id, card);
+  });
+
+  actions.appendChild(likeBtn);
+  actions.appendChild(commentBtn);
+
+  // Author controls (edit/delete)
+  var controls = null;
+  if (currentUser && currentUser.id === post.user_id) {
+    controls = document.createElement("div");
+    controls.className = "post-controls";
+
+    var editBtn = document.createElement("button");
+    editBtn.className = "btn btn-small btn-secondary";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", function () {
+      openEditPostModal(post);
+    });
+
+    var deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn btn-small btn-danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", function () {
+      handleDeletePost(post.id);
+    });
+
+    controls.appendChild(editBtn);
+    controls.appendChild(deleteBtn);
+  }
+
+  // Comments section (hidden by default)
+  var commentsSection = document.createElement("div");
+  commentsSection.className = "comments-section hidden";
+  commentsSection.id = "comments-" + post.id;
+
+  // Assemble card
+  card.appendChild(header);
+  card.appendChild(content);
+  if (controls) card.appendChild(controls);
+  card.appendChild(actions);
+  card.appendChild(commentsSection);
+
+  return card;
+}
+
+// -------------------------------------------------------
+// 11. LIKE HANDLER
+// -------------------------------------------------------
+
+async function handleLikeToggle(postId, btn) {
+  if (!currentUser) {
+    alert("Please log in to like posts.");
+    return;
+  }
+
+  btn.disabled = true;
+
+  if (userLikes[postId]) {
+    var unlikeResult = await unlikePost(postId);
+    if (!unlikeResult.error) {
+      delete userLikes[postId];
+    }
+  } else {
+    var likeResult = await likePost(postId);
+    if (!likeResult.error) {
+      userLikes[postId] = true;
+    }
+  }
+
+  btn.disabled = false;
+  // Refresh feed to update counts
+  await loadFeed();
+}
+
+// -------------------------------------------------------
+// 12. COMMENT UI
+// -------------------------------------------------------
+
+async function toggleComments(postId, card) {
+  var section = card.querySelector(".comments-section");
+  if (!section.classList.contains("hidden")) {
+    section.classList.add("hidden");
+    return;
+  }
+  section.classList.remove("hidden");
+  await loadComments(postId, section);
+}
+
+async function loadComments(postId, section) {
+  section.innerHTML = '<p class="loading-text">Loading comments…</p>';
+
+  var result = await fetchComments(postId);
+  if (result.error) {
+    section.innerHTML = '<p class="message error">Failed to load comments.</p>';
+    return;
+  }
+
+  var comments = result.data || [];
+
+  // Fetch usernames for comment authors
+  var commentUserIds = comments.map(function (c) { return c.user_id; });
+  await fetchUsernames(commentUserIds);
+
+  section.innerHTML = "";
+
+  // Render comments
+  if (comments.length === 0) {
+    var empty = document.createElement("p");
+    empty.className = "no-comments";
+    empty.textContent = "No comments yet.";
+    section.appendChild(empty);
+  } else {
+    comments.forEach(function (comment) {
+      var commentEl = createCommentElement(comment, postId, section);
+      section.appendChild(commentEl);
+    });
+  }
+
+  // Add comment form (if logged in)
+  if (currentUser) {
+    var form = createAddCommentForm(postId, section);
+    section.appendChild(form);
+  }
+}
+
+function createCommentElement(comment, postId, section) {
+  var div = document.createElement("div");
+  div.className = "comment-item";
+
+  var header = document.createElement("div");
+  header.className = "comment-header";
+
+  var authorSpan = document.createElement("span");
+  authorSpan.className = "comment-author";
+  authorSpan.textContent = getDisplayName(comment.user_id);
+
+  var timeSpan = document.createElement("span");
+  timeSpan.className = "comment-time";
+  var timeText = formatTime(comment.created_at);
+  if (comment.updated_at) {
+    timeText += " (edited)";
+  }
+  timeSpan.textContent = timeText;
+
+  header.appendChild(authorSpan);
+  header.appendChild(timeSpan);
+
+  var body = document.createElement("div");
+  body.className = "comment-body";
+  body.innerHTML = renderSafeContent(comment.content);
+
+  div.appendChild(header);
+  div.appendChild(body);
+
+  // Edit/delete for own comments
+  if (currentUser && currentUser.id === comment.user_id) {
+    var controls = document.createElement("div");
+    controls.className = "comment-controls";
+
+    var editBtn = document.createElement("button");
+    editBtn.className = "btn btn-tiny btn-secondary";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", function () {
+      startEditComment(comment, div, postId, section);
+    });
+
+    var deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn btn-tiny btn-danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", async function () {
+      if (!confirm("Delete this comment?")) return;
+      var res = await deleteComment(comment.id);
+      if (!res.error) {
+        await loadComments(postId, section);
+        await loadFeed();
+      }
+    });
+
+    controls.appendChild(editBtn);
+    controls.appendChild(deleteBtn);
+    div.appendChild(controls);
+  }
+
+  return div;
+}
+
+function startEditComment(comment, div, postId, section) {
+  div.innerHTML = "";
+  var form = document.createElement("form");
+  form.className = "comment-edit-form";
+
+  var input = document.createElement("textarea");
+  input.className = "comment-input";
+  input.rows = 2;
+  input.value = comment.content;
+
+  var btnGroup = document.createElement("div");
+  btnGroup.className = "btn-group";
+
+  var saveBtn = document.createElement("button");
+  saveBtn.type = "submit";
+  saveBtn.className = "btn btn-tiny btn-primary";
+  saveBtn.textContent = "Save";
+
+  var cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "btn btn-tiny btn-secondary";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", function () {
+    loadComments(postId, section);
+  });
+
+  btnGroup.appendChild(saveBtn);
+  btnGroup.appendChild(cancelBtn);
+
+  form.appendChild(input);
+  form.appendChild(btnGroup);
+
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var newContent = input.value.trim();
+    if (!newContent) return;
+    saveBtn.disabled = true;
+    var res = await updateComment(comment.id, newContent);
+    saveBtn.disabled = false;
+    if (!res.error) {
+      await loadComments(postId, section);
+    }
+  });
+
+  div.appendChild(form);
+}
+
+function createAddCommentForm(postId, section) {
+  var form = document.createElement("form");
+  form.className = "add-comment-form";
+
+  var input = document.createElement("textarea");
+  input.className = "comment-input";
+  input.rows = 2;
+  input.placeholder = "Write a comment…";
+  input.required = true;
+
+  var submitBtn = document.createElement("button");
+  submitBtn.type = "submit";
+  submitBtn.className = "btn btn-small btn-primary";
+  submitBtn.textContent = "Comment";
+
+  form.appendChild(input);
+  form.appendChild(submitBtn);
+
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var content = input.value.trim();
+    if (!content) return;
+    submitBtn.disabled = true;
+    var res = await insertComment(postId, content);
+    submitBtn.disabled = false;
+    if (!res.error) {
+      input.value = "";
+      await loadComments(postId, section);
+      await loadFeed();
+    }
+  });
+
+  return form;
+}
+
+// -------------------------------------------------------
+// 13. POST EDIT / DELETE
+// -------------------------------------------------------
+
+let editingPostId = null;
+
+function openEditPostModal(post) {
+  editingPostId = post.id;
+  editPostInput.value = post.content;
+  updateWordCounter(editPostInput, editWordCounter);
+  setMessage(editPostMessage, "", "");
+  editPostOverlay.classList.remove("hidden");
+}
+
+async function handleDeletePost(postId) {
+  if (!confirm("Delete this post? This cannot be undone.")) return;
+  var result = await deletePost(postId);
+  if (result.error) {
+    alert("Failed to delete post: " + result.error.message);
+  } else {
+    await loadFeed();
+  }
+}
+
+// -------------------------------------------------------
+// 14. ELEMENT REFERENCES
+// -------------------------------------------------------
+var authSection       = document.getElementById("auth-section");
+var createPostSection = document.getElementById("create-post-section");
+var feedList          = document.getElementById("feed-list");
+var emailInput        = document.getElementById("email");
+var passwordInput     = document.getElementById("password");
+var signupBtn         = document.getElementById("signup-btn");
+var loginBtn          = document.getElementById("login-btn");
+var logoutBtn         = document.getElementById("logout-btn");
+var authMessage       = document.getElementById("auth-message");
+var insertForm        = document.getElementById("insert-form");
+var dataInput         = document.getElementById("data-input");
+var dataMessage       = document.getElementById("data-message");
+var wordCounter       = document.getElementById("word-counter");
+var userInfo          = document.getElementById("user-info");
+var usernameOverlay   = document.getElementById("username-overlay");
+var usernameForm      = document.getElementById("username-form");
+var usernameInput     = document.getElementById("username-input");
+var usernameSubmitBtn = document.getElementById("username-submit-btn");
+var usernameMessage   = document.getElementById("username-message");
+var editPostOverlay   = document.getElementById("edit-post-overlay");
+var editPostForm      = document.getElementById("edit-post-form");
+var editPostInput     = document.getElementById("edit-post-input");
+var editWordCounter   = document.getElementById("edit-word-counter");
+var editPostCancel    = document.getElementById("edit-post-cancel");
+var editPostMessage   = document.getElementById("edit-post-message");
+
+// -------------------------------------------------------
+// 15. EVENT LISTENERS
+// -------------------------------------------------------
+
+signupBtn.addEventListener("click", async function () {
+  var email    = emailInput.value.trim();
+  var password = passwordInput.value;
   if (!email || !password) return;
 
-  const { user, error } = await signUpUser(email, password);
-  if (error) {
-    setMessage(authMessage, error.message, "error");
+  var result = await signUpUser(email, password);
+  if (result.error) {
+    setMessage(authMessage, result.error.message, "error");
   } else {
     setMessage(
       authMessage,
@@ -232,57 +698,101 @@ signupBtn.addEventListener("click", async () => {
   }
 });
 
-loginBtn.addEventListener("click", async () => {
-  const email    = emailInput.value.trim();
-  const password = passwordInput.value;
+loginBtn.addEventListener("click", async function () {
+  var email    = emailInput.value.trim();
+  var password = passwordInput.value;
   if (!email || !password) return;
 
-  const { user, error } = await loginUser(email, password);
-  if (error) {
-    setMessage(authMessage, error.message, "error");
+  var result = await loginUser(email, password);
+  if (result.error) {
+    setMessage(authMessage, result.error.message, "error");
   } else {
-    onLoggedIn(user);
+    onLoggedIn(result.user);
   }
 });
 
-logoutBtn.addEventListener("click", async () => {
-  const { error } = await logoutUser();
-  if (!error) onLoggedOut();
+logoutBtn.addEventListener("click", async function () {
+  var result = await logoutUser();
+  if (!result.error) onLoggedOut();
 });
 
-insertForm.addEventListener("submit", async (e) => {
+// Word counter for post creation
+dataInput.addEventListener("input", function () {
+  updateWordCounter(dataInput, wordCounter);
+});
+
+// Word counter for post editing
+editPostInput.addEventListener("input", function () {
+  updateWordCounter(editPostInput, editWordCounter);
+});
+
+// Post creation
+insertForm.addEventListener("submit", async function (e) {
   e.preventDefault();
-  const content = dataInput.value.trim();
+  var content = dataInput.value.trim();
   if (!content) return;
 
-  const { data, error } = await insertData({ content });
-  if (error) {
-    setMessage(dataMessage, error.message, "error");
-  } else {
-    setMessage(dataMessage, "Entry added!", "success");
-    dataInput.value = "";
-    await loadAndRenderData();
-  }
-});
-
-usernameForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const raw = usernameInput.value;
-  const username = normalizeUsername(raw);
-
-  if (username.length < MIN_USERNAME_LENGTH) {
-    setMessage(usernameMessage, `Username must be at least ${MIN_USERNAME_LENGTH} characters.`, "error");
+  var words = countWords(content);
+  if (words > MAX_POST_WORDS) {
+    setMessage(dataMessage, "Post exceeds " + MAX_POST_WORDS + " word limit (" + words + " words). Please shorten it.", "error");
     return;
   }
 
-  // Disable button while saving
+  var result = await insertPost(content);
+  if (result.error) {
+    setMessage(dataMessage, result.error.message, "error");
+  } else {
+    setMessage(dataMessage, "Post created!", "success");
+    dataInput.value = "";
+    updateWordCounter(dataInput, wordCounter);
+    await loadFeed();
+  }
+});
+
+// Post editing form
+editPostForm.addEventListener("submit", async function (e) {
+  e.preventDefault();
+  var content = editPostInput.value.trim();
+  if (!content || !editingPostId) return;
+
+  var words = countWords(content);
+  if (words > MAX_POST_WORDS) {
+    setMessage(editPostMessage, "Post exceeds " + MAX_POST_WORDS + " word limit (" + words + " words).", "error");
+    return;
+  }
+
+  var result = await updatePost(editingPostId, content);
+  if (result.error) {
+    setMessage(editPostMessage, result.error.message, "error");
+  } else {
+    editPostOverlay.classList.add("hidden");
+    editingPostId = null;
+    await loadFeed();
+  }
+});
+
+editPostCancel.addEventListener("click", function () {
+  editPostOverlay.classList.add("hidden");
+  editingPostId = null;
+});
+
+// Username form
+usernameForm.addEventListener("submit", async function (e) {
+  e.preventDefault();
+  var raw = usernameInput.value;
+  var username = normalizeUsername(raw);
+
+  if (username.length < MIN_USERNAME_LENGTH) {
+    setMessage(usernameMessage, "Username must be at least " + MIN_USERNAME_LENGTH + " characters.", "error");
+    return;
+  }
+
   usernameSubmitBtn.disabled = true;
   usernameSubmitBtn.textContent = "Saving…";
   setMessage(usernameMessage, "", "");
 
-  const {
-    data: { user },
-  } = await db.auth.getUser();
+  var authResult = await db.auth.getUser();
+  var user = authResult.data.user;
 
   if (!user) {
     setMessage(usernameMessage, "You must be logged in.", "error");
@@ -291,67 +801,86 @@ usernameForm.addEventListener("submit", async (e) => {
     return;
   }
 
-  const { profile, error } = await saveUsername(user.id, username);
+  var result = await saveUsername(user.id, username);
   usernameSubmitBtn.disabled = false;
   usernameSubmitBtn.textContent = "Save Username";
 
-  if (error) {
-    // Handle unique constraint violation
-    const msg =
-      error.code === "23505"
+  if (result.error) {
+    var msg =
+      result.error.code === "23505"
         ? "That username is already taken. Please choose another."
-        : error.message;
+        : result.error.message;
     setMessage(usernameMessage, msg, "error");
   } else {
-    // Success — update header and hide overlay
-    userInfo.textContent = "Signed in as: @" + profile.username;
+    userInfo.textContent = "Signed in as: @" + result.profile.username;
     usernameOverlay.classList.add("hidden");
     usernameInput.value = "";
     setMessage(usernameMessage, "", "");
+    // Update cache
+    usernameCache[user.id] = result.profile.username;
+    await loadFeed();
   }
 });
 
 // -------------------------------------------------------
-// 7.  SESSION MANAGEMENT
+// 16. SESSION MANAGEMENT
 // -------------------------------------------------------
 
 function onLoggedIn(user) {
+  currentUser = user;
   userInfo.textContent = user.email;
   logoutBtn.classList.remove("hidden");
-  showSection("data");
-  loadAndRenderData();
+  authSection.classList.add("hidden");
+  createPostSection.classList.remove("hidden");
   getOrPromptUsername(user);
+  // Load user's likes, then refresh feed
+  fetchUserLikes(user.id).then(function () { loadFeed(); });
 }
 
 function onLoggedOut() {
+  currentUser = null;
+  userLikes = {};
   userInfo.textContent = "";
   logoutBtn.classList.add("hidden");
   usernameOverlay.classList.add("hidden");
-  showSection("auth");
+  createPostSection.classList.add("hidden");
+  authSection.classList.remove("hidden");
   setMessage(authMessage, "", "");
+  loadFeed();
 }
 
-async function loadAndRenderData() {
-  const { data, error } = await fetchData();
-  if (error) {
-    setMessage(dataMessage, error.message, "error");
-  } else {
-    renderDataList(data);
+async function loadFeed() {
+  var result = await fetchPosts();
+  if (result.error) {
+    feedList.innerHTML = '<p class="message error">Failed to load posts.</p>';
+    return;
   }
+
+  var posts = result.data || [];
+
+  // Collect unique user_ids and fetch usernames
+  var userIds = [];
+  posts.forEach(function (p) {
+    if (userIds.indexOf(p.user_id) === -1) userIds.push(p.user_id);
+  });
+  await fetchUsernames(userIds);
+
+  renderFeed(posts);
 }
 
 // Restore an existing session on page load
-(async () => {
-  const { data: { session } } = await db.auth.getSession();
-  if (session?.user) {
+(async function () {
+  var sessionResult = await db.auth.getSession();
+  var session = sessionResult.data.session;
+  if (session && session.user) {
     onLoggedIn(session.user);
   } else {
-    showSection("auth");
+    authSection.classList.remove("hidden");
+    loadFeed();
   }
 
-  // Listen for auth state changes (e.g. email confirmation callback)
-  db.auth.onAuthStateChange((_event, session) => {
-    if (session?.user) {
+  db.auth.onAuthStateChange(function (_event, session) {
+    if (session && session.user) {
       onLoggedIn(session.user);
     } else {
       onLoggedOut();

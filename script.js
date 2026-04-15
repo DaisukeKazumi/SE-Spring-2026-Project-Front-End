@@ -116,8 +116,8 @@ async function getOrPromptUsername(user) {
   if (error) {
     console.error("Failed to fetch profile:", error.message);
   }
-  if (profile?.username) {
-    userInfo.textContent = profile.username;
+  if (profile?.username && profile.username.trim().length > 0) {
+    userInfo.textContent = "Signed in as: @" + profile.username;
     return;
   }
   // Show the username overlay
@@ -304,7 +304,7 @@ usernameForm.addEventListener("submit", async (e) => {
     setMessage(usernameMessage, msg, "error");
   } else {
     // Success — update header and hide overlay
-    userInfo.textContent = profile.username;
+    userInfo.textContent = "Signed in as: @" + profile.username;
     usernameOverlay.classList.add("hidden");
     usernameInput.value = "";
     setMessage(usernameMessage, "", "");

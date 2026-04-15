@@ -9,25 +9,26 @@
   padding: 0;
 }
 
-/* ----- CSS Variables (easy theme customisation) ----- */
+/* ----- CSS Variables (dark purple Twitter-like theme) ----- */
 :root {
-  --color-primary:    #C3B091;   /* Supabase-style green */
-  --color-primary-dk: #2bab71;
-  --color-secondary:  #6c757d;
-  --color-bg:         #f4f6f9;
-  --color-surface:    #ffffff;
-  --color-text:       #1f2937;
-  --color-muted:      #6b7280;
-  --color-error:      #ef4444;
-  --color-success:    #22c55e;
+  --color-primary:    #7c3aed;   /* Purple accent */
+  --color-primary-dk: #6d28d9;
+  --color-secondary:  #4b5563;
+  --color-bg:         #0d1117;   /* Near-black / dark blue */
+  --color-surface:    #161b22;   /* Slightly lighter dark blue */
+  --color-text:       #e5e7eb;   /* Off-white / light gray */
+  --color-muted:      #9ca3af;
+  --color-error:      #f87171;
+  --color-success:    #4ade80;
+  --color-border:     #21262d;   /* Subtle dark outlines */
   --radius:           8px;
-  --shadow:           0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow:           0 2px 8px rgba(0, 0, 0, 0.3);
   --max-width:        720px;
 }
 
 /* ----- Base Typography ----- */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Wingdings", Roboto, Helvetica,
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
   font-size: 16px;
   line-height: 1.6;
@@ -41,7 +42,7 @@ body {
 /* ----- Header ----- */
 header {
   background: var(--color-surface);
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border);
   padding: 0.75rem 1.5rem;
   box-shadow: var(--shadow);
 }
@@ -86,6 +87,7 @@ main {
 /* ----- Cards ----- */
 .card {
   background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 1.75rem 2rem;
   box-shadow: var(--shadow);
@@ -112,24 +114,30 @@ form {
 label {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--color-muted);
 }
 
 input[type="email"],
 input[type="password"],
 input[type="text"] {
   padding: 0.55rem 0.85rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   font-size: 0.95rem;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
   width: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+input::placeholder {
+  color: var(--color-muted);
 }
 
 input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.2);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.3);
 }
 
 /* ----- Buttons ----- */
@@ -191,7 +199,7 @@ input:focus {
 
 .data-list li {
   background: var(--color-bg);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 0.5rem 0.85rem;
   font-size: 0.9rem;
@@ -201,12 +209,13 @@ input:focus {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 1rem;
+  backdrop-filter: blur(4px);
 }
 
 .overlay-card {
@@ -236,7 +245,7 @@ footer {
   padding: 1rem 1.5rem;
   font-size: 0.8rem;
   color: var(--color-muted);
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border);
 }
 
 /* ----- Responsive (small screens) ----- */

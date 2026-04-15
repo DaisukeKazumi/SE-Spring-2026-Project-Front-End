@@ -56,20 +56,43 @@
         </div>
       </div>
 
-      <!-- Data section (visible after login) -->
-      <section id="data-section" class="card hidden">
-        <h2>Your Data</h2>
+      <!-- Post edit modal -->
+      <div id="edit-post-overlay" class="overlay hidden">
+        <div class="card overlay-card">
+          <h2>Edit Post</h2>
+          <form id="edit-post-form">
+            <label for="edit-post-input">Content</label>
+            <textarea id="edit-post-input" class="post-textarea" rows="4" required></textarea>
+            <div class="word-counter" id="edit-word-counter">0 / 1024 words</div>
+            <div class="btn-group">
+              <button type="submit" class="btn btn-primary">Save</button>
+              <button type="button" id="edit-post-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+          </form>
+          <p id="edit-post-message" class="message"></p>
+        </div>
+      </div>
+
+      <!-- Create post section (visible after login) -->
+      <section id="create-post-section" class="card hidden">
+        <h2>Create a Post</h2>
 
         <form id="insert-form">
-          <label for="data-input">Add a new post</label>
-          <input type="text" id="data-input" placeholder="Enter something…" required />
-          <button type="submit" class="btn btn-primary">Insert</button>
+          <label for="data-input">What's on your mind?</label>
+          <textarea id="data-input" class="post-textarea" rows="3" placeholder="Write your post…" required></textarea>
+          <div class="word-counter" id="word-counter">0 / 1024 words</div>
+          <button type="submit" class="btn btn-primary">Post</button>
         </form>
 
         <p id="data-message" class="message"></p>
+      </section>
 
-        <h3>Existing Entries</h3>
-        <ul id="data-list" class="data-list"></ul>
+      <!-- Public feed (always visible) -->
+      <section id="feed-section">
+        <h2 class="feed-title">Public Feed</h2>
+        <div id="feed-list" class="feed-list">
+          <p class="feed-empty">Loading posts…</p>
+        </div>
       </section>
 
     </main>

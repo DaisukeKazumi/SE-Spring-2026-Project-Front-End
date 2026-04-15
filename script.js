@@ -118,7 +118,10 @@ async function fetchUsernames(userIds) {
 function getDisplayName(userId) {
   var name = usernameCache[userId];
   if (name && name.trim().length > 0) return "@" + name;
-  return "Anonymous";
+  if (userId && typeof userId === "string" && userId.length >= 6) {
+    return "User " + userId.substring(0, 6);
+  }
+  return "User";
 }
 
 // -------------------------------------------------------
@@ -244,23 +247,81 @@ function countWords(text) {
 }
 
 /**
- * Safely render post/comment content with clickable links.
- * Escapes HTML to prevent XSS, then converts URLs to <a> tags.
+ * Safely render post/comment content with clickable links using DOM nodes.
+ * Returns a DocumentFragment (not an HTML string) to avoid innerHTML XSS risks.
+ * Optionally embeds YouTube videos.
  */
-function renderSafeContent(text) {
-  var escaped = escapeHtml(text);
-  // Only match http: and https: URLs
+function renderSafeContentNodes(text) {
+  var fragment = document.createDocumentFragment();
+  // Match http/https URLs
   var urlPattern = /(\bhttps?:\/\/[^\s<>"']+)/gi;
-  var withLinks = escaped.replace(urlPattern, function (url) {
-    return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
-  });
-  return withLinks;
+  var lastIndex = 0;
+  var match;
+
+  while ((match = urlPattern.exec(text)) !== null) {
+    // Add text before the URL as a text node
+    if (match.index > lastIndex) {
+      fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+    }
+
+    var url = match[1];
+
+    // Check for YouTube embed
+    var youtubeId = extractYouTubeId(url);
+    if (youtubeId) {
+      // Create clickable link
+      var link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = url;
+      fragment.appendChild(link);
+
+      // Create YouTube embed preview
+      var wrapper = document.createElement("div");
+      wrapper.style.cssText = "position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;margin:0.5rem 0;border-radius:8px;";
+      var iframe = document.createElement("iframe");
+      iframe.src = "https://www.youtube-nocookie.com/embed/" + youtubeId;
+      iframe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;border:0;border-radius:8px;";
+      iframe.setAttribute("allowfullscreen", "");
+      iframe.setAttribute("loading", "lazy");
+      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation");
+      wrapper.appendChild(iframe);
+      fragment.appendChild(wrapper);
+    } else {
+      // Regular link
+      var anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = url;
+      fragment.appendChild(anchor);
+    }
+
+    lastIndex = urlPattern.lastIndex;
+  }
+
+  // Add remaining text after the last URL
+  if (lastIndex < text.length) {
+    fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+  }
+
+  return fragment;
 }
 
-function escapeHtml(str) {
-  var div = document.createElement("div");
-  div.appendChild(document.createTextNode(str));
-  return div.innerHTML;
+/**
+ * Extract YouTube video ID from common YouTube URL formats.
+ * Returns null if not a YouTube URL.
+ */
+function extractYouTubeId(url) {
+  var patterns = [
+    /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    var m = url.match(patterns[i]);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 function formatTime(isoString) {
@@ -335,7 +396,7 @@ function createPostCard(post) {
   // Content
   var content = document.createElement("div");
   content.className = "post-content";
-  content.innerHTML = renderSafeContent(post.content);
+  content.appendChild(renderSafeContentNodes(post.content));
 
   // Actions bar: like + comment count
   var actions = document.createElement("div");
@@ -347,6 +408,10 @@ function createPostCard(post) {
   var isLiked = currentUser && userLikes[post.id];
   if (isLiked) likeBtn.classList.add("liked");
   likeBtn.textContent = (isLiked ? "♥ Liked" : "♡ Like") + " (" + (post.like_count || 0) + ")";
+  if (!currentUser) {
+    likeBtn.disabled = true;
+    likeBtn.title = "Log in to like posts";
+  }
   likeBtn.addEventListener("click", function () {
     handleLikeToggle(post.id, likeBtn);
   });
@@ -505,7 +570,7 @@ function createCommentElement(comment, postId, section) {
 
   var body = document.createElement("div");
   body.className = "comment-body";
-  body.innerHTML = renderSafeContent(comment.content);
+  body.appendChild(renderSafeContentNodes(comment.content));
 
   div.appendChild(header);
   div.appendChild(body);
@@ -578,6 +643,13 @@ function startEditComment(comment, div, postId, section) {
     e.preventDefault();
     var newContent = input.value.trim();
     if (!newContent) return;
+
+    var words = countWords(newContent);
+    if (words > MAX_POST_WORDS) {
+      alert("Comment exceeds " + MAX_POST_WORDS + " word limit (" + words + " words). Please shorten it.");
+      return;
+    }
+
     saveBtn.disabled = true;
     var res = await updateComment(comment.id, newContent);
     saveBtn.disabled = false;
@@ -611,6 +683,13 @@ function createAddCommentForm(postId, section) {
     e.preventDefault();
     var content = input.value.trim();
     if (!content) return;
+
+    var words = countWords(content);
+    if (words > MAX_POST_WORDS) {
+      alert("Comment exceeds " + MAX_POST_WORDS + " word limit (" + words + " words). Please shorten it.");
+      return;
+    }
+
     submitBtn.disabled = true;
     var res = await insertComment(postId, content);
     submitBtn.disabled = false;

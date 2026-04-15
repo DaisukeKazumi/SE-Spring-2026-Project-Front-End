@@ -324,14 +324,18 @@ function extractYouTubeId(url) {
   return null;
 }
 
+var MS_PER_MINUTE = 60000;
+var MS_PER_HOUR   = 3600000;
+var MS_PER_DAY    = 86400000;
+var MS_PER_WEEK   = 604800000;
+
 function formatTime(isoString) {
   var d = new Date(isoString);
-  var now = Date.now();
-  var diff = now - d.getTime(); // ms
-  if (diff < 60000)  return "just now";
-  if (diff < 3600000) return Math.floor(diff / 60000) + " min ago";
-  if (diff < 86400000) return Math.floor(diff / 3600000) + " h ago";
-  if (diff < 604800000) return Math.floor(diff / 86400000) + " d ago";
+  var diff = Date.now() - d.getTime();
+  if (diff < MS_PER_MINUTE)  return "just now";
+  if (diff < MS_PER_HOUR)    return Math.floor(diff / MS_PER_MINUTE) + " min ago";
+  if (diff < MS_PER_DAY)     return Math.floor(diff / MS_PER_HOUR) + " h ago";
+  if (diff < MS_PER_WEEK)    return Math.floor(diff / MS_PER_DAY) + " d ago";
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -463,6 +467,7 @@ function createPostCard(post) {
   var isLiked = currentUser && userLikes[post.id];
   if (isLiked) likeBtn.classList.add("liked");
   likeBtn.textContent = (isLiked ? "♥ Liked" : "♡ Like") + " (" + (post.like_count || 0) + ")";
+  likeBtn.setAttribute("aria-label", (isLiked ? "Unlike post" : "Like post") + ", " + (post.like_count || 0) + " likes");
   if (!currentUser) {
     likeBtn.disabled = true;
     likeBtn.title = "Log in to like posts";
@@ -476,6 +481,7 @@ function createPostCard(post) {
   commentBtn.className = "btn-comment-toggle";
   commentBtn.textContent = "💬 " + (post.comment_count || 0);
   commentBtn.title = "Toggle comments";
+  commentBtn.setAttribute("aria-label", "Toggle comments, " + (post.comment_count || 0) + " comments");
   commentBtn.addEventListener("click", function () {
     toggleComments(post.id, card);
   });

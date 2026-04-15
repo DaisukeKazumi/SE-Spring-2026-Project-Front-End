@@ -118,7 +118,10 @@ async function fetchUsernames(userIds) {
 function getDisplayName(userId) {
   var name = usernameCache[userId];
   if (name && name.trim().length > 0) return "@" + name;
-  return "Anonymous";
+  if (userId && typeof userId === "string" && userId.length >= 6) {
+    return "User " + userId.substring(0, 6);
+  }
+  return "User";
 }
 
 // -------------------------------------------------------
@@ -244,28 +247,100 @@ function countWords(text) {
 }
 
 /**
- * Safely render post/comment content with clickable links.
- * Escapes HTML to prevent XSS, then converts URLs to <a> tags.
+ * Safely render post/comment content with clickable links using DOM nodes.
+ * Returns a DocumentFragment (not an HTML string) to avoid innerHTML XSS risks.
+ * Optionally embeds YouTube videos.
  */
-function renderSafeContent(text) {
-  var escaped = escapeHtml(text);
-  // Only match http: and https: URLs
+function renderSafeContentNodes(text) {
+  var fragment = document.createDocumentFragment();
+  // Match http/https URLs
   var urlPattern = /(\bhttps?:\/\/[^\s<>"']+)/gi;
-  var withLinks = escaped.replace(urlPattern, function (url) {
-    return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
-  });
-  return withLinks;
+  var lastIndex = 0;
+  var match;
+
+  while ((match = urlPattern.exec(text)) !== null) {
+    // Add text before the URL as a text node
+    if (match.index > lastIndex) {
+      fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+    }
+
+    var url = match[1];
+
+    // Check for YouTube embed
+    var youtubeId = extractYouTubeId(url);
+    if (youtubeId) {
+      // Create clickable link
+      var link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = url;
+      fragment.appendChild(link);
+
+      // Create YouTube embed preview
+      var wrapper = document.createElement("div");
+      wrapper.style.cssText = "position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;margin:0.5rem 0;border-radius:8px;";
+      var iframe = document.createElement("iframe");
+      iframe.src = "https://www.youtube-nocookie.com/embed/" + youtubeId;
+      iframe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;border:0;border-radius:8px;";
+      iframe.setAttribute("allowfullscreen", "");
+      iframe.setAttribute("loading", "lazy");
+      iframe.setAttribute("sandbox", "allow-scripts allow-presentation");
+      wrapper.appendChild(iframe);
+      fragment.appendChild(wrapper);
+    } else {
+      // Regular link
+      var anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = url;
+      fragment.appendChild(anchor);
+    }
+
+    lastIndex = urlPattern.lastIndex;
+  }
+
+  // Add remaining text after the last URL
+  if (lastIndex < text.length) {
+    fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+  }
+
+  return fragment;
 }
 
-function escapeHtml(str) {
-  var div = document.createElement("div");
-  div.appendChild(document.createTextNode(str));
-  return div.innerHTML;
+/**
+ * Extract YouTube video ID from common YouTube URL formats.
+ * Returns null if not a YouTube URL.
+ */
+function extractYouTubeId(url) {
+  var patterns = [
+    /(?:youtube\.com\/watch\?v=|youtube\.com\/embed\/|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{10,12})/
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    var m = url.match(patterns[i]);
+    if (m) return m[1];
+  }
+  return null;
 }
+
+var MS_PER_MINUTE = 60000;
+var MS_PER_HOUR   = 3600000;
+var MS_PER_DAY    = 86400000;
+var MS_PER_WEEK   = 604800000;
 
 function formatTime(isoString) {
   var d = new Date(isoString);
-  return d.toLocaleString();
+  var diff = Date.now() - d.getTime();
+  if (diff < MS_PER_MINUTE)  return "just now";
+  if (diff < MS_PER_HOUR)    return Math.floor(diff / MS_PER_MINUTE) + " min ago";
+  if (diff < MS_PER_DAY)     return Math.floor(diff / MS_PER_HOUR) + " h ago";
+  if (diff < MS_PER_WEEK)    return Math.floor(diff / MS_PER_DAY) + " d ago";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function fullDateTime(isoString) {
+  return new Date(isoString).toLocaleString();
 }
 
 // -------------------------------------------------------
@@ -317,27 +392,72 @@ function createPostCard(post) {
   card.className = "post-card";
   card.dataset.postId = post.id;
 
-  // Header: author + time
+  // ── Header ──────────────────────────────────────────────
   var header = document.createElement("div");
   header.className = "post-header";
 
+  // Left side: avatar + meta
+  var headerLeft = document.createElement("div");
+  headerLeft.className = "post-header-left";
+
+  // Avatar circle with first letter of username
+  var displayName = getDisplayName(post.user_id);
+  var avatar = document.createElement("div");
+  avatar.className = "post-avatar";
+  var initials = displayName.replace(/^@/, "").charAt(0).toUpperCase() || "?";
+  avatar.textContent = initials;
+
+  // Username + timestamp stacked
+  var meta = document.createElement("div");
+  meta.className = "post-meta";
+
   var author = document.createElement("span");
   author.className = "post-author";
-  author.textContent = getDisplayName(post.user_id);
+  author.textContent = displayName;
 
   var time = document.createElement("span");
   time.className = "post-time";
-  time.textContent = "posted at " + formatTime(post.created_at);
+  time.textContent = formatTime(post.created_at);
+  time.title = fullDateTime(post.created_at); // full date on hover
 
-  header.appendChild(author);
-  header.appendChild(time);
+  meta.appendChild(author);
+  meta.appendChild(time);
 
-  // Content
+  headerLeft.appendChild(avatar);
+  headerLeft.appendChild(meta);
+
+  // Right side: edit/delete (only for post author)
+  var headerRight = document.createElement("div");
+  headerRight.className = "post-header-right";
+
+  if (currentUser && currentUser.id === post.user_id) {
+    var editBtn = document.createElement("button");
+    editBtn.className = "btn btn-tiny btn-secondary";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", function () {
+      openEditPostModal(post);
+    });
+
+    var deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn btn-tiny btn-danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", function () {
+      handleDeletePost(post.id);
+    });
+
+    headerRight.appendChild(editBtn);
+    headerRight.appendChild(deleteBtn);
+  }
+
+  header.appendChild(headerLeft);
+  header.appendChild(headerRight);
+
+  // ── Content ──────────────────────────────────────────────
   var content = document.createElement("div");
   content.className = "post-content";
-  content.innerHTML = renderSafeContent(post.content);
+  content.appendChild(renderSafeContentNodes(post.content));
 
-  // Actions bar: like + comment count
+  // ── Action bar: like + comments ──────────────────────────
   var actions = document.createElement("div");
   actions.className = "post-actions";
 
@@ -347,6 +467,11 @@ function createPostCard(post) {
   var isLiked = currentUser && userLikes[post.id];
   if (isLiked) likeBtn.classList.add("liked");
   likeBtn.textContent = (isLiked ? "♥ Liked" : "♡ Like") + " (" + (post.like_count || 0) + ")";
+  likeBtn.setAttribute("aria-label", (isLiked ? "Unlike post" : "Like post") + ", " + (post.like_count || 0) + " likes");
+  if (!currentUser) {
+    likeBtn.disabled = true;
+    likeBtn.title = "Log in to like posts";
+  }
   likeBtn.addEventListener("click", function () {
     handleLikeToggle(post.id, likeBtn);
   });
@@ -354,7 +479,9 @@ function createPostCard(post) {
   // Comment toggle
   var commentBtn = document.createElement("button");
   commentBtn.className = "btn-comment-toggle";
-  commentBtn.textContent = "💬 Comments (" + (post.comment_count || 0) + ")";
+  commentBtn.textContent = "💬 " + (post.comment_count || 0);
+  commentBtn.title = "Toggle comments";
+  commentBtn.setAttribute("aria-label", "Toggle comments, " + (post.comment_count || 0) + " comments");
   commentBtn.addEventListener("click", function () {
     toggleComments(post.id, card);
   });
@@ -362,39 +489,14 @@ function createPostCard(post) {
   actions.appendChild(likeBtn);
   actions.appendChild(commentBtn);
 
-  // Author controls (edit/delete)
-  var controls = null;
-  if (currentUser && currentUser.id === post.user_id) {
-    controls = document.createElement("div");
-    controls.className = "post-controls";
-
-    var editBtn = document.createElement("button");
-    editBtn.className = "btn btn-small btn-secondary";
-    editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", function () {
-      openEditPostModal(post);
-    });
-
-    var deleteBtn = document.createElement("button");
-    deleteBtn.className = "btn btn-small btn-danger";
-    deleteBtn.textContent = "Delete";
-    deleteBtn.addEventListener("click", function () {
-      handleDeletePost(post.id);
-    });
-
-    controls.appendChild(editBtn);
-    controls.appendChild(deleteBtn);
-  }
-
-  // Comments section (hidden by default)
+  // ── Comments section (hidden by default) ─────────────────
   var commentsSection = document.createElement("div");
   commentsSection.className = "comments-section hidden";
   commentsSection.id = "comments-" + post.id;
 
-  // Assemble card
+  // ── Assemble ─────────────────────────────────────────────
   card.appendChild(header);
   card.appendChild(content);
-  if (controls) card.appendChild(controls);
   card.appendChild(actions);
   card.appendChild(commentsSection);
 
@@ -505,7 +607,7 @@ function createCommentElement(comment, postId, section) {
 
   var body = document.createElement("div");
   body.className = "comment-body";
-  body.innerHTML = renderSafeContent(comment.content);
+  body.appendChild(renderSafeContentNodes(comment.content));
 
   div.appendChild(header);
   div.appendChild(body);
@@ -578,6 +680,13 @@ function startEditComment(comment, div, postId, section) {
     e.preventDefault();
     var newContent = input.value.trim();
     if (!newContent) return;
+
+    var words = countWords(newContent);
+    if (words > MAX_POST_WORDS) {
+      alert("Comment exceeds " + MAX_POST_WORDS + " word limit (" + words + " words). Please shorten it.");
+      return;
+    }
+
     saveBtn.disabled = true;
     var res = await updateComment(comment.id, newContent);
     saveBtn.disabled = false;
@@ -611,6 +720,13 @@ function createAddCommentForm(postId, section) {
     e.preventDefault();
     var content = input.value.trim();
     if (!content) return;
+
+    var words = countWords(content);
+    if (words > MAX_POST_WORDS) {
+      alert("Comment exceeds " + MAX_POST_WORDS + " word limit (" + words + " words). Please shorten it.");
+      return;
+    }
+
     submitBtn.disabled = true;
     var res = await insertComment(postId, content);
     submitBtn.disabled = false;

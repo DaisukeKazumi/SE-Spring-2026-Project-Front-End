@@ -249,7 +249,7 @@ function countWords(text) {
  */
 function renderSafeContent(text) {
   var escaped = escapeHtml(text);
-  // Convert URLs to clickable links
+  // Only match http: and https: URLs
   var urlPattern = /(\bhttps?:\/\/[^\s<>"']+)/gi;
   var withLinks = escaped.replace(urlPattern, function (url) {
     return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
@@ -414,15 +414,13 @@ async function handleLikeToggle(postId, btn) {
   btn.disabled = true;
 
   if (userLikes[postId]) {
-    // Unlike
-    var result = await unlikePost(postId);
-    if (!result.error) {
+    var unlikeResult = await unlikePost(postId);
+    if (!unlikeResult.error) {
       delete userLikes[postId];
     }
   } else {
-    // Like
-    var result2 = await likePost(postId);
-    if (!result2.error) {
+    var likeResult = await likePost(postId);
+    if (!likeResult.error) {
       userLikes[postId] = true;
     }
   }

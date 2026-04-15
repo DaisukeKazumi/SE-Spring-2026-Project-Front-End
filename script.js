@@ -56,6 +56,75 @@ async function logoutUser() {
 }
 
 // -------------------------------------------------------
+// 2b. PROFILE HELPERS
+// -------------------------------------------------------
+
+const MIN_USERNAME_LENGTH = 3;
+
+/**
+ * Fetch the profile row for a given user id.
+ * @param {string} userId
+ * @returns {Promise<{profile: object|null, error: object|null}>}
+ */
+async function fetchProfile(userId) {
+  const { data, error } = await db
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .single();
+  return { profile: data ?? null, error };
+}
+
+/**
+ * Normalize a raw username string: trim whitespace and lowercase.
+ * @param {string} raw
+ * @returns {string}
+ */
+function normalizeUsername(raw) {
+  return raw.trim().toLowerCase();
+}
+
+/**
+ * Save (upsert) a username into public.profiles for the current user.
+ * @param {string} userId
+ * @param {string} rawUsername
+ * @returns {Promise<{profile: object|null, error: object|null}>}
+ */
+async function saveUsername(userId, rawUsername) {
+  const username = normalizeUsername(rawUsername);
+  if (username.length < MIN_USERNAME_LENGTH) {
+    return {
+      profile: null,
+      error: { message: `Username must be at least ${MIN_USERNAME_LENGTH} characters.` },
+    };
+  }
+  const { data, error } = await db
+    .from("profiles")
+    .upsert({ id: userId, username })
+    .select()
+    .single();
+  return { profile: data ?? null, error };
+}
+
+/**
+ * Check whether the user already has a username.
+ * If not, show the username prompt overlay.
+ * @param {object} user  The auth user object.
+ */
+async function getOrPromptUsername(user) {
+  const { profile, error } = await fetchProfile(user.id);
+  if (error) {
+    console.error("Failed to fetch profile:", error.message);
+  }
+  if (profile?.username) {
+    userInfo.textContent = profile.username;
+    return;
+  }
+  // Show the username overlay
+  usernameOverlay.classList.remove("hidden");
+}
+
+// -------------------------------------------------------
 // 3.  DATABASE HELPERS
 //     Adjust the table name ("entries") to match your own
 //     Supabase table.  Add/remove columns as needed.
@@ -136,6 +205,11 @@ const dataInput    = document.getElementById("data-input");
 const dataMessage  = document.getElementById("data-message");
 const dataList     = document.getElementById("data-list");
 const userInfo     = document.getElementById("user-info");
+const usernameOverlay = document.getElementById("username-overlay");
+const usernameForm    = document.getElementById("username-form");
+const usernameInput   = document.getElementById("username-input");
+const usernameSubmitBtn = document.getElementById("username-submit-btn");
+const usernameMessage = document.getElementById("username-message");
 
 // -------------------------------------------------------
 // 6.  EVENT LISTENERS
@@ -191,6 +265,52 @@ insertForm.addEventListener("submit", async (e) => {
   }
 });
 
+usernameForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const raw = usernameInput.value;
+  const username = normalizeUsername(raw);
+
+  if (username.length < MIN_USERNAME_LENGTH) {
+    setMessage(usernameMessage, `Username must be at least ${MIN_USERNAME_LENGTH} characters.`, "error");
+    return;
+  }
+
+  // Disable button while saving
+  usernameSubmitBtn.disabled = true;
+  usernameSubmitBtn.textContent = "Saving…";
+  setMessage(usernameMessage, "", "");
+
+  const {
+    data: { user },
+  } = await db.auth.getUser();
+
+  if (!user) {
+    setMessage(usernameMessage, "You must be logged in.", "error");
+    usernameSubmitBtn.disabled = false;
+    usernameSubmitBtn.textContent = "Save Username";
+    return;
+  }
+
+  const { profile, error } = await saveUsername(user.id, username);
+  usernameSubmitBtn.disabled = false;
+  usernameSubmitBtn.textContent = "Save Username";
+
+  if (error) {
+    // Handle unique constraint violation
+    const msg =
+      error.code === "23505"
+        ? "That username is already taken. Please choose another."
+        : error.message;
+    setMessage(usernameMessage, msg, "error");
+  } else {
+    // Success — update header and hide overlay
+    userInfo.textContent = profile.username;
+    usernameOverlay.classList.add("hidden");
+    usernameInput.value = "";
+    setMessage(usernameMessage, "", "");
+  }
+});
+
 // -------------------------------------------------------
 // 7.  SESSION MANAGEMENT
 // -------------------------------------------------------
@@ -200,11 +320,13 @@ function onLoggedIn(user) {
   logoutBtn.classList.remove("hidden");
   showSection("data");
   loadAndRenderData();
+  getOrPromptUsername(user);
 }
 
 function onLoggedOut() {
   userInfo.textContent = "";
   logoutBtn.classList.add("hidden");
+  usernameOverlay.classList.add("hidden");
   showSection("auth");
   setMessage(authMessage, "", "");
 }

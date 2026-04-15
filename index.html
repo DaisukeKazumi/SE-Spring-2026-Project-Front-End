@@ -42,6 +42,20 @@
         <p id="auth-message" class="message"></p>
       </section>
 
+      <!-- Username prompt (shown after login if username is not set) -->
+      <div id="username-overlay" class="overlay hidden">
+        <div class="card overlay-card">
+          <h2>Choose a Username</h2>
+          <p>Pick a unique username (at least 3 characters).</p>
+          <form id="username-form">
+            <label for="username-input">Username</label>
+            <input type="text" id="username-input" placeholder="e.g. cooluser42" required minlength="3" />
+            <button type="submit" id="username-submit-btn" class="btn btn-primary">Save Username</button>
+          </form>
+          <p id="username-message" class="message"></p>
+        </div>
+      </div>
+
       <!-- Data section (visible after login) -->
       <section id="data-section" class="card hidden">
         <h2>Your Data</h2>

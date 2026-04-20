@@ -1,5 +1,0 @@
-Right click on index.html to run the website
-
-
-Posts are stored in Supabase
-Email/password is stored in [find out where and how to access]

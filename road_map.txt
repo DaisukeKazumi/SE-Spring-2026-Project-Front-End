@@ -1,22 +1,27 @@
+BUGS TO FIX
+- Bug that doesn't take the user to the website upon confirmed the email
+  - Ultimately, the account IS verified, though
+
 BACKEND
 - Let users create accounts ✅
   - Let users recover accounts if they forgot passwords
+    - Ask prof how to get email/password information
 - Let users make posts ✅
 - Make the server live (not only run locally) ✅
-  - Let users see each others post somehow
-  - Make a home feed
+  - Let users see each others post somehow ✅
+  - Make a home feed ✅
     - Create an algorithm?
-- Ask prof how to get email/password information
-- Add some liking/commenting function
+- Add some liking/commenting function ✅
 
 
 FRONTEND
-- Make a home feed
-- Category for most popular posts
+- Make a home feed ✅
+- Category for most popular posts 
   - Find a way to artificially inflate numbers for the sake of testing
 - Allow users to change their view of their feed (i.e. dark mode, etc.)
 - Create a logo
-  - Have it display in the browser tab up top
+  - Have it display in the browser tab up top 
+- If a post has been edited, mark it as "edited" on the website
 
 
 LINKS
@@ -24,3 +29,5 @@ Supabase home page:
   https://supabase.com/dashboard/project/emlogmnygnpvtzfgyjet
 Table of all posts: 
   https://supabase.com/dashboard/project/emlogmnygnpvtzfgyjet/editor/20912?schema=public&sort=user_id%3Aasc&sort=created_at%3Aasc 
+Website URL:
+  https://daisukekazumi.github.io/SE-Spring-2026-Project-Front-End/

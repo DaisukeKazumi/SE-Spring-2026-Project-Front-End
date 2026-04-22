@@ -21,9 +21,10 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const MAX_POST_WORDS = 1024;
 const MIN_USERNAME_LENGTH = 3;
 const MAX_MENTION_RESULTS = 6;
-const MAX_COMMENT_RENDER_DEPTH = 8;
+const COMMENT_RENDER_DEPTH_LIMIT = 8;
 const COMMENT_INDENT_PX = 14;
 const MENTION_DROPDOWN_BLUR_DELAY_MS = 150;
+const MENTION_TRAILING_PATTERN = /@([a-z0-9_]*)$/i;
 
 // Current user state
 let currentUser = null;
@@ -1144,7 +1145,7 @@ function createCommentElement(node, postId, section, repostId, likesByComment, d
   var comment = node.comment;
   var div = document.createElement("div");
   div.className = "comment-item";
-  div.style.marginLeft = Math.min(depth, MAX_COMMENT_RENDER_DEPTH) * COMMENT_INDENT_PX + "px";
+  div.style.marginLeft = Math.min(depth, COMMENT_RENDER_DEPTH_LIMIT) * COMMENT_INDENT_PX + "px";
 
   var header = document.createElement("div");
   header.className = "comment-header";
@@ -1305,7 +1306,7 @@ function applyMention(textarea, username) {
   var caret = textarea.selectionStart;
   var before = textarea.value.slice(0, caret);
   var after = textarea.value.slice(caret);
-  var replaced = before.replace(/@([a-z0-9_]*)$/i, "@" + username + " ");
+  var replaced = before.replace(MENTION_TRAILING_PATTERN, "@" + username + " ");
   textarea.value = replaced + after;
   var newPos = replaced.length;
   textarea.setSelectionRange(newPos, newPos);
@@ -1316,8 +1317,13 @@ function attachMentionAutocomplete(textarea) {
   var dropdown = document.createElement("div");
   dropdown.className = "mention-autocomplete hidden";
   textarea.parentElement.appendChild(dropdown);
+  var blurTimer = null;
 
   async function refresh() {
+    if (blurTimer) {
+      clearTimeout(blurTimer);
+      blurTimer = null;
+    }
     var prefix = extractMentionPrefix(textarea);
     if (prefix === null) {
       dropdown.classList.add("hidden");
@@ -1349,8 +1355,9 @@ function attachMentionAutocomplete(textarea) {
   textarea.addEventListener("input", refresh);
   textarea.addEventListener("click", refresh);
   textarea.addEventListener("blur", function () {
-    setTimeout(function () {
+    blurTimer = setTimeout(function () {
       dropdown.classList.add("hidden");
+      blurTimer = null;
     }, MENTION_DROPDOWN_BLUR_DELAY_MS);
   });
 }
@@ -1522,7 +1529,7 @@ insertForm.addEventListener("submit", async function (e) {
   } else {
     var myProfile = await getCurrentUserProfile();
     if (!myProfile) {
-      setMessage(dataMessage, "Please complete your profile before posting.", "error");
+      setMessage(dataMessage, "Could not find your profile row. Set a username first, then try again.", "error");
       return;
     }
     targetProfileId = myProfile.id;

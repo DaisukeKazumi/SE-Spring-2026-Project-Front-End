@@ -794,7 +794,33 @@ var editPostCancel    = document.getElementById("edit-post-cancel");
 var editPostMessage   = document.getElementById("edit-post-message");
 
 // -------------------------------------------------------
-// 15. EVENT LISTENERS
+// 15. NEW-POSTS REALTIME PROMPT
+// -------------------------------------------------------
+
+var newPostsPrompt = document.createElement("div");
+newPostsPrompt.className = "new-posts-prompt";
+newPostsPrompt.textContent = "New posts \u2014 scroll up to refresh";
+document.body.appendChild(newPostsPrompt);
+
+newPostsPrompt.addEventListener("click", function () {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  newPostsPrompt.classList.remove("visible");
+  loadFeed();
+});
+
+var newPostsChannel = db
+  .channel("posts:global", { config: { private: true } })
+  .on("broadcast", { event: "INSERT" }, function () {
+    newPostsPrompt.classList.add("visible");
+  })
+  .subscribe();
+
+window.addEventListener("beforeunload", function () {
+  db.removeChannel(newPostsChannel);
+});
+
+// -------------------------------------------------------
+// 16. EVENT LISTENERS
 // -------------------------------------------------------
 
 signupBtn.addEventListener("click", async function () {

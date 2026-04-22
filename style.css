@@ -610,3 +610,32 @@ footer {
     font-size: 0.9rem;
   }
 }
+
+/* ----- New-posts realtime prompt ----- */
+.new-posts-prompt {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.55rem 1.25rem;
+  border-radius: 2rem;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.new-posts-prompt.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.new-posts-prompt:hover {
+  background: var(--color-primary-dk);
+}

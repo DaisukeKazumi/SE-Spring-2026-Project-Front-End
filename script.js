@@ -263,6 +263,67 @@ async function fetchComments(postId, repostId) {
   return { data, error };
 }
 
+async function fetchTopLevelComments(postId, repostId) {
+  let query = db
+    .from("post_comments")
+    .select("*")
+    .eq("post_id", postId)
+    .is("parent_comment_id", null)
+    .order("created_at", { ascending: true });
+  if (repostId) {
+    query = query.eq("repost_id", repostId);
+  } else {
+    query = query.is("repost_id", null);
+  }
+  const { data, error } = await query;
+  return { data, error };
+}
+
+async function fetchRepliesForComment(postId, parentCommentId, repostId) {
+  let query = db
+    .from("post_comments")
+    .select("*")
+    .eq("post_id", postId)
+    .eq("parent_comment_id", parentCommentId)
+    .order("created_at", { ascending: true });
+  if (repostId) {
+    query = query.eq("repost_id", repostId);
+  } else {
+    query = query.is("repost_id", null);
+  }
+  const { data, error } = await query;
+  return { data, error };
+}
+
+async function fetchRepliesForComments(postId, parentCommentIds, repostId) {
+  if (!parentCommentIds || parentCommentIds.length === 0) return { data: [], error: null };
+  let query = db
+    .from("post_comments")
+    .select("*")
+    .eq("post_id", postId)
+    .in("parent_comment_id", parentCommentIds)
+    .order("created_at", { ascending: true });
+  if (repostId) {
+    query = query.eq("repost_id", repostId);
+  } else {
+    query = query.is("repost_id", null);
+  }
+  const { data, error } = await query;
+  return { data, error };
+}
+
+function withRlsHint(error, operationLabel) {
+  if (!error) return null;
+  var message = error.message || "Unknown error.";
+  if (error.code === "42501" || /row-level security|permission denied/i.test(message)) {
+    message +=
+      " This looks like an RLS/policy issue. Verify policy allows " +
+      operationLabel +
+      " for auth.uid(), and ensure user_id is explicitly set from the authenticated user.";
+  }
+  return Object.assign({}, error, { message: message });
+}
+
 async function insertComment(postId, content, parentCommentId, repostId) {
   if (!currentUser?.id) {
     return { data: null, error: { message: "You must be logged in to comment." } };
@@ -278,7 +339,7 @@ async function insertComment(postId, content, parentCommentId, repostId) {
     .from("post_comments")
     .insert([newComment])
     .select();
-  return { data, error };
+  return { data, error: withRlsHint(error, "inserts into post_comments") };
 }
 
 async function updateComment(commentId, content) {
@@ -314,16 +375,39 @@ async function likeComment(commentId) {
   const { error } = await db
     .from("comment_likes")
     .insert([{ comment_id: commentId, user_id: currentUser.id }]);
-  return { error };
+  return { error: withRlsHint(error, "inserts into comment_likes") };
 }
 
 async function unlikeComment(commentId) {
+  if (!currentUser?.id) {
+    return { error: { message: "You must be logged in to unlike comments." } };
+  }
   const { error } = await db
     .from("comment_likes")
     .delete()
     .eq("comment_id", commentId)
     .eq("user_id", currentUser.id);
-  return { error };
+  return { error: withRlsHint(error, "deletes from comment_likes") };
+}
+
+async function toggleCommentLike(commentId) {
+  if (!currentUser?.id) {
+    return { liked: false, error: { message: "You must be logged in to like comments." } };
+  }
+  if (userCommentLikes[commentId]) {
+    var unlikeResult = await unlikeComment(commentId);
+    return { liked: false, error: unlikeResult.error || null };
+  }
+  var likeResult = await likeComment(commentId);
+  if (!likeResult.error) {
+    return { liked: true, error: null };
+  }
+  // If we hit uniqueness (already liked), toggle by deleting.
+  if (likeResult.error.code === "23505") {
+    var fallbackUnlike = await unlikeComment(commentId);
+    return { liked: false, error: fallbackUnlike.error || null };
+  }
+  return { liked: false, error: likeResult.error };
 }
 
 async function searchMentionProfiles(prefix) {
@@ -996,11 +1080,14 @@ function createPostCard(post, options) {
   // Comment toggle
   var commentBtn = document.createElement("button");
   commentBtn.className = "btn-comment-toggle";
-  commentBtn.textContent = repostId ? "💬 Thread" : "💬 " + (post.comment_count || 0);
-  commentBtn.title = "Toggle comments";
-  commentBtn.setAttribute("aria-label", repostId ? "Toggle repost thread comments" : "Toggle comments, " + (post.comment_count || 0) + " comments");
+  var commentCountLabel = "Comments (" + (post.comment_count || 0) + ")";
+  commentBtn.textContent = commentCountLabel;
+  commentBtn.title = "Open comments";
+  commentBtn.dataset.closedLabel = commentCountLabel;
+  commentBtn.dataset.openLabel = "Hide Comments";
+  commentBtn.setAttribute("aria-label", "Comments, " + (post.comment_count || 0) + " comments");
   commentBtn.addEventListener("click", function () {
-    toggleComments(post.id, card, repostId);
+    toggleComments(post.id, card, repostId, false, commentBtn);
   });
 
   var repostBtn = document.createElement("button");
@@ -1028,7 +1115,7 @@ function createPostCard(post, options) {
 
   // ── Comments section (hidden by default) ─────────────────
   var commentsSection = document.createElement("div");
-  commentsSection.className = "comments-section hidden";
+  commentsSection.className = "comments-section comments-popover hidden";
   commentsSection.id = "comments-" + post.id;
 
   // ── Assemble ─────────────────────────────────────────────
@@ -1073,13 +1160,15 @@ async function handleLikeToggle(postId, btn) {
 // 12. COMMENT UI
 // -------------------------------------------------------
 
-async function toggleComments(postId, card, repostId, forceOpen) {
+async function toggleComments(postId, card, repostId, forceOpen, toggleBtn) {
   var section = card.querySelector(".comments-section");
   if (!forceOpen && !section.classList.contains("hidden")) {
     section.classList.add("hidden");
+    if (toggleBtn) toggleBtn.textContent = toggleBtn.dataset.closedLabel || "Comments";
     return;
   }
   section.classList.remove("hidden");
+  if (toggleBtn) toggleBtn.textContent = toggleBtn.dataset.openLabel || "Hide Comments";
   await loadComments(postId, section, repostId || null);
 }
 
@@ -1189,16 +1278,46 @@ function createCommentElement(node, postId, section, repostId, likesByComment, d
   var likeBtn = document.createElement("button");
   likeBtn.className = "btn btn-tiny btn-secondary";
   var liked = !!userCommentLikes[comment.id];
-  likeBtn.textContent = (liked ? "♥" : "♡") + " " + (likesByComment[comment.id] || 0);
+  var likeCount = likesByComment[comment.id] || 0;
+  function updateCommentLikeButton() {
+    likeBtn.textContent = (liked ? "Unlike" : "Like") + " (" + likeCount + ")";
+  }
+  updateCommentLikeButton();
   likeBtn.disabled = !currentUser;
   likeBtn.addEventListener("click", async function () {
     if (!currentUser) return;
-    likeBtn.disabled = true;
-    var res = userCommentLikes[comment.id] ? await unlikeComment(comment.id) : await likeComment(comment.id);
-    likeBtn.disabled = false;
-    if (!res.error) {
-      await loadComments(postId, section, repostId);
+    var previousLiked = liked;
+    var previousCount = likeCount;
+    liked = !liked;
+    likeCount = Math.max(0, likeCount + (liked ? 1 : -1));
+    if (liked) {
+      userCommentLikes[comment.id] = true;
+    } else {
+      delete userCommentLikes[comment.id];
     }
+    updateCommentLikeButton();
+    likeBtn.disabled = true;
+    var res = await toggleCommentLike(comment.id);
+    likeBtn.disabled = false;
+    if (res.error) {
+      liked = previousLiked;
+      likeCount = previousCount;
+      if (previousLiked) {
+        userCommentLikes[comment.id] = true;
+      } else {
+        delete userCommentLikes[comment.id];
+      }
+      updateCommentLikeButton();
+      alert("Failed to update comment like: " + res.error.message);
+      return;
+    }
+    liked = !!res.liked;
+    if (liked) {
+      userCommentLikes[comment.id] = true;
+    } else {
+      delete userCommentLikes[comment.id];
+    }
+    updateCommentLikeButton();
   });
   controls.appendChild(likeBtn);
 

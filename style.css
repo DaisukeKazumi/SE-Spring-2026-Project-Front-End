@@ -301,6 +301,7 @@ input:focus {
   padding: 1rem 1.25rem;
   box-shadow: var(--shadow);
   transition: border-color 0.15s;
+  position: relative;
 }
 
 .post-card:hover {
@@ -495,6 +496,16 @@ input:focus {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--color-border);
+}
+
+.comments-popover {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.75rem;
+  max-height: 480px;
+  overflow-y: auto;
 }
 
 .no-comments {

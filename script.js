@@ -21,6 +21,9 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const MAX_POST_WORDS = 1024;
 const MIN_USERNAME_LENGTH = 3;
 const MAX_MENTION_RESULTS = 6;
+const MAX_COMMENT_RENDER_DEPTH = 8;
+const COMMENT_INDENT_PX = 14;
+const MENTION_DROPDOWN_BLUR_DELAY_MS = 150;
 
 // Current user state
 let currentUser = null;
@@ -184,8 +187,10 @@ async function fetchPostById(postId) {
 }
 
 async function insertPost(content, profileId) {
-  var payload = { content: content, profile_id: profileId };
-  if (currentUser?.id) payload.user_id = currentUser.id;
+  if (!currentUser?.id) {
+    return { data: null, error: { message: "You must be logged in to post." } };
+  }
+  var payload = { content: content, profile_id: profileId, user_id: currentUser.id };
   const { data, error } = await db
     .from("posts")
     .insert([payload])
@@ -1049,7 +1054,7 @@ async function handleLikeToggle(postId, btn) {
 
   btn.disabled = false;
   // Refresh feed to update counts
-  await loadFeed();
+  await refreshCurrentView();
 }
 
 // -------------------------------------------------------
@@ -1139,7 +1144,7 @@ function createCommentElement(node, postId, section, repostId, likesByComment, d
   var comment = node.comment;
   var div = document.createElement("div");
   div.className = "comment-item";
-  div.style.marginLeft = Math.min(depth, 8) * 14 + "px";
+  div.style.marginLeft = Math.min(depth, MAX_COMMENT_RENDER_DEPTH) * COMMENT_INDENT_PX + "px";
 
   var header = document.createElement("div");
   header.className = "comment-header";
@@ -1346,7 +1351,7 @@ function attachMentionAutocomplete(textarea) {
   textarea.addEventListener("blur", function () {
     setTimeout(function () {
       dropdown.classList.add("hidden");
-    }, 150);
+    }, MENTION_DROPDOWN_BLUR_DELAY_MS);
   });
 }
 

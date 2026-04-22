@@ -27,6 +27,10 @@ let currentUser = null;
 let usernameCache = {};
 // Cache: post_id -> true (posts the current user has liked)
 let userLikes = {};
+// Realtime subscription + UI state
+let postsRealtimeChannel = null;
+let newPostsPrompt = null;
+let isRefreshingFromPrompt = false;
 
 // -------------------------------------------------------
 // 3.  AUTH HELPERS
@@ -365,6 +369,69 @@ function updateWordCounter(textarea, counterEl) {
   } else {
     counterEl.classList.remove("over-limit");
   }
+}
+
+function ensureNewPostsPrompt() {
+  if (newPostsPrompt) return newPostsPrompt;
+
+  var prompt = document.createElement("button");
+  prompt.type = "button";
+  prompt.textContent = "New posts — scroll up to refresh";
+  prompt.classList.add("hidden");
+  prompt.style.cssText = [
+    "position:fixed",
+    "right:1rem",
+    "bottom:1rem",
+    "z-index:1000",
+    "padding:0.6rem 0.9rem",
+    "border:none",
+    "border-radius:999px",
+    "background:#111827",
+    "color:#ffffff",
+    "font-weight:600",
+    "font-size:0.9rem",
+    "cursor:pointer",
+    "box-shadow:0 8px 20px rgba(0,0,0,0.25)"
+  ].join(";");
+
+  prompt.addEventListener("click", async function () {
+    if (isRefreshingFromPrompt) return;
+    isRefreshingFromPrompt = true;
+    prompt.disabled = true;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    hideNewPostsPrompt();
+    try {
+      await loadFeed();
+    } finally {
+      isRefreshingFromPrompt = false;
+      prompt.disabled = false;
+    }
+  });
+
+  document.body.appendChild(prompt);
+  newPostsPrompt = prompt;
+  return newPostsPrompt;
+}
+
+function showNewPostsPrompt() {
+  var prompt = ensureNewPostsPrompt();
+  if (!prompt.classList.contains("hidden")) return;
+  prompt.classList.remove("hidden");
+}
+
+function hideNewPostsPrompt() {
+  if (!newPostsPrompt) return;
+  newPostsPrompt.classList.add("hidden");
+}
+
+function setupPostsRealtimeSubscription() {
+  if (postsRealtimeChannel) return;
+  postsRealtimeChannel = db
+    .channel("posts:global", { config: { private: true } })
+    .on("broadcast", { event: "INSERT" }, function () {
+      showNewPostsPrompt();
+    })
+    .subscribe();
 }
 
 // -------------------------------------------------------
@@ -948,6 +1015,7 @@ function onLoggedIn(user) {
   logoutBtn.classList.remove("hidden");
   authSection.classList.add("hidden");
   createPostSection.classList.remove("hidden");
+  setupPostsRealtimeSubscription();
   getOrPromptUsername(user);
   // Load user's likes, then refresh feed
   fetchUserLikes(user.id).then(function () { loadFeed(); });
@@ -956,6 +1024,11 @@ function onLoggedIn(user) {
 function onLoggedOut() {
   currentUser = null;
   userLikes = {};
+  hideNewPostsPrompt();
+  if (postsRealtimeChannel) {
+    db.removeChannel(postsRealtimeChannel);
+    postsRealtimeChannel = null;
+  }
   userInfo.textContent = "";
   logoutBtn.classList.add("hidden");
   usernameOverlay.classList.add("hidden");

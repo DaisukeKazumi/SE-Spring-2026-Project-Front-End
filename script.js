@@ -24,7 +24,7 @@ const MAX_MENTION_RESULTS = 6;
 const COMMENT_RENDER_DEPTH_LIMIT = 8;
 const COMMENT_INDENT_PX = 14;
 const MENTION_DROPDOWN_BLUR_DELAY_MS = 150;
-const MENTION_PREFIX_PATTERN = /(?:^|\s)@([a-z0-9_]*)$/i;
+const MENTION_PREFIX_PATTERN = /(^|\s)@([a-z0-9_]+)$/i;
 
 // Current user state
 let currentUser = null;
@@ -191,7 +191,7 @@ async function insertPost(content, profileId) {
   if (!currentUser?.id) {
     return { data: null, error: { message: "You must be logged in to post." } };
   }
-  var newPost = { content: content, profile_id: profileId, user_id: currentUser.id };
+  const newPost = { content: content, profile_id: profileId, user_id: currentUser.id };
   const { data, error } = await db
     .from("posts")
     .insert([newPost])
@@ -264,7 +264,7 @@ async function fetchComments(postId, repostId) {
 }
 
 async function insertComment(postId, content, parentCommentId, repostId) {
-  var newComment = { post_id: postId, content: content, parent_comment_id: parentCommentId || null, repost_id: repostId || null };
+  const newComment = { post_id: postId, content: content, parent_comment_id: parentCommentId || null, repost_id: repostId || null };
   const { data, error } = await db
     .from("post_comments")
     .insert([newComment])
@@ -819,7 +819,6 @@ async function loadAndRenderProfile(slug) {
 async function loadAndRenderRepost(repostId) {
   activeProfileForRoute = null;
   updateComposerVisibility(null);
-  createPostSection.classList.add("hidden");
   setFeedTitle("Repost");
   feedList.innerHTML = '<p class="loading-text">Loading repost…</p>';
 
@@ -1072,10 +1071,9 @@ async function toggleComments(postId, card, repostId, forceOpen) {
   await loadComments(postId, section, repostId || null);
 }
 
-function aggregateCommentLikeState(commentIds, rows) {
+function aggregateCommentLikeState(rows) {
   var likesByComment = {};
   var currentUserLikes = {};
-  commentIds.forEach(function (id) { likesByComment[id] = 0; });
   (rows || []).forEach(function (row) {
     likesByComment[row.comment_id] = (likesByComment[row.comment_id] || 0) + 1;
     if (currentUser && row.user_id === currentUser.id) currentUserLikes[row.comment_id] = true;
@@ -1115,7 +1113,7 @@ async function loadComments(postId, section, repostId) {
   var commentUserIds = comments.map(function (c) { return c.user_id; });
   await fetchUsernames(commentUserIds);
   var likesResult = await fetchCommentLikes(commentIds);
-  var likeState = aggregateCommentLikeState(commentIds, likesResult.data || []);
+  var likeState = aggregateCommentLikeState(likesResult.data || []);
   userCommentLikes = likeState.currentUserLikes;
 
   section.innerHTML = "";
@@ -1299,15 +1297,15 @@ function extractMentionPrefix(textarea) {
   var caret = textarea.selectionStart;
   var before = textarea.value.slice(0, caret);
   var match = before.match(MENTION_PREFIX_PATTERN);
-  return match ? match[1] : null;
+  return match ? match[2] : null;
 }
 
 function applyMention(textarea, username) {
   var caret = textarea.selectionStart;
   var before = textarea.value.slice(0, caret);
   var after = textarea.value.slice(caret);
-  var replaced = before.replace(MENTION_PREFIX_PATTERN, function (full) {
-    return full.replace(/@([a-z0-9_]*)$/i, "@" + username + " ");
+  var replaced = before.replace(MENTION_PREFIX_PATTERN, function (_full, boundary) {
+    return boundary + "@" + username + " ";
   });
   textarea.value = replaced + after;
   var newPos = replaced.length;

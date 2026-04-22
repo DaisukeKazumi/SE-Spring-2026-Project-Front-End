@@ -84,7 +84,7 @@ async function fetchProfileBySlug(slug) {
   return { profile: data ?? null, error };
 }
 
-function usernameToSlug(username) {
+function createSlugFromUsername(username) {
   return normalizeUsername(username).replace(/[^a-z0-9_]/g, "");
 }
 
@@ -102,7 +102,7 @@ async function saveUsername(userId, rawUsername) {
   }
   const { data, error } = await db
     .from("profiles")
-    .upsert({ id: userId, username, slug: usernameToSlug(username) })
+    .upsert({ id: userId, username, slug: createSlugFromUsername(username) })
     .select()
     .single();
   return { profile: data ?? null, error };
@@ -191,10 +191,10 @@ async function insertPost(content, profileId) {
   if (!currentUser?.id) {
     return { data: null, error: { message: "You must be logged in to post." } };
   }
-  var postData = { content: content, profile_id: profileId, user_id: currentUser.id };
+  var newPost = { content: content, profile_id: profileId, user_id: currentUser.id };
   const { data, error } = await db
     .from("posts")
-    .insert([postData])
+    .insert([newPost])
     .select();
   return { data, error };
 }
@@ -248,7 +248,7 @@ async function createRepost(postId) {
 // -------------------------------------------------------
 
 async function fetchComments(postId, repostId) {
-  var commentsQuery = db
+  let commentsQuery = db
     .from("post_comments")
     .select("*")
     .eq("post_id", postId)
@@ -264,10 +264,10 @@ async function fetchComments(postId, repostId) {
 }
 
 async function insertComment(postId, content, parentCommentId, repostId) {
-  var commentData = { post_id: postId, content: content, parent_comment_id: parentCommentId || null, repost_id: repostId || null };
+  var newComment = { post_id: postId, content: content, parent_comment_id: parentCommentId || null, repost_id: repostId || null };
   const { data, error } = await db
     .from("post_comments")
-    .insert([commentData])
+    .insert([newComment])
     .select();
   return { data, error };
 }
@@ -1524,14 +1524,14 @@ insertForm.addEventListener("submit", async function (e) {
   var targetProfileId = null;
   if (currentRoute.type === "profile") {
     if (!activeProfileForRoute || !currentUser || activeProfileForRoute.id !== currentUser.id) {
-      setMessage(dataMessage, "You can only post on your own profile page.", "error");
+      setMessage(dataMessage, "You can only create posts on your own profile. Navigate to your profile to post.", "error");
       return;
     }
     targetProfileId = activeProfileForRoute.id;
   } else {
     var myProfile = await getCurrentUserProfile();
     if (!myProfile) {
-      setMessage(dataMessage, "Could not find your profile row. Set a username first, then try again.", "error");
+      setMessage(dataMessage, "Could not find your profile. Please set a username first, then try again.", "error");
       return;
     }
     targetProfileId = myProfile.id;

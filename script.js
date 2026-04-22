@@ -308,6 +308,9 @@ async function fetchCommentLikes(commentIds) {
 }
 
 async function likeComment(commentId) {
+  if (!currentUser?.id) {
+    return { error: { message: "You must be logged in to like comments." } };
+  }
   const { error } = await db
     .from("comment_likes")
     .insert([{ comment_id: commentId, user_id: currentUser.id }]);

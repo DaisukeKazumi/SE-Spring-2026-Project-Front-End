@@ -30,6 +30,7 @@ let userLikes = {};
 // Realtime subscription + UI state
 let postsRealtimeChannel = null;
 let newPostsPrompt = null;
+let isRefreshingFromPrompt = false;
 
 // -------------------------------------------------------
 // 3.  AUTH HELPERS
@@ -394,9 +395,17 @@ function ensureNewPostsPrompt() {
   ].join(";");
 
   prompt.addEventListener("click", async function () {
+    if (isRefreshingFromPrompt) return;
+    isRefreshingFromPrompt = true;
+    prompt.disabled = true;
     window.scrollTo({ top: 0, behavior: "smooth" });
     hideNewPostsPrompt();
-    await loadFeed();
+    try {
+      await loadFeed();
+    } finally {
+      isRefreshingFromPrompt = false;
+      prompt.disabled = false;
+    }
   });
 
   document.body.appendChild(prompt);

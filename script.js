@@ -21,6 +21,8 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const MAX_POST_WORDS = 1024;
 const MIN_USERNAME_LENGTH = 3;
 const MAX_MENTION_RESULTS = 6;
+const COMMENT_RENDER_DEPTH_LIMIT = 8;
+const COMMENT_INDENT_PX = 14;
 const MENTION_DROPDOWN_BLUR_DELAY_MS = 150;
 const MENTION_PREFIX_PATTERN = /(^|\s)@([a-z0-9_]+)$/i;
 
@@ -250,7 +252,6 @@ async function fetchComments(postId, repostId) {
     .from("post_comments")
     .select("*")
     .eq("post_id", postId)
-    .is("parent_comment_id", null)
     .order("created_at", { ascending: true });
 
   if (repostId) {
@@ -259,6 +260,55 @@ async function fetchComments(postId, repostId) {
     commentsQuery = commentsQuery.is("repost_id", null);
   }
   const { data, error } = await commentsQuery;
+  return { data, error };
+}
+
+async function fetchTopLevelComments(postId, repostId) {
+  let query = db
+    .from("post_comments")
+    .select("*")
+    .eq("post_id", postId)
+    .is("parent_comment_id", null)
+    .order("created_at", { ascending: true });
+  if (repostId) {
+    query = query.eq("repost_id", repostId);
+  } else {
+    query = query.is("repost_id", null);
+  }
+  const { data, error } = await query;
+  return { data, error };
+}
+
+async function fetchRepliesForComment(postId, parentCommentId, repostId) {
+  let query = db
+    .from("post_comments")
+    .select("*")
+    .eq("post_id", postId)
+    .eq("parent_comment_id", parentCommentId)
+    .order("created_at", { ascending: true });
+  if (repostId) {
+    query = query.eq("repost_id", repostId);
+  } else {
+    query = query.is("repost_id", null);
+  }
+  const { data, error } = await query;
+  return { data, error };
+}
+
+async function fetchRepliesForComments(postId, parentCommentIds, repostId) {
+  if (!parentCommentIds || parentCommentIds.length === 0) return { data: [], error: null };
+  let query = db
+    .from("post_comments")
+    .select("*")
+    .eq("post_id", postId)
+    .in("parent_comment_id", parentCommentIds)
+    .order("created_at", { ascending: true });
+  if (repostId) {
+    query = query.eq("repost_id", repostId);
+  } else {
+    query = query.is("repost_id", null);
+  }
+  const { data, error } = await query;
   return { data, error };
 }
 
@@ -274,7 +324,7 @@ function withRlsHint(error, operationLabel) {
   return Object.assign({}, error, { message: message });
 }
 
-async function insertComment(postId, content, repostId) {
+async function insertComment(postId, content, parentCommentId, repostId) {
   if (!currentUser?.id) {
     return { data: null, error: { message: "You must be logged in to comment." } };
   }
@@ -282,7 +332,7 @@ async function insertComment(postId, content, repostId) {
     post_id: postId,
     user_id: currentUser.id,
     content: content,
-    parent_comment_id: null,
+    parent_comment_id: parentCommentId || null,
     repost_id: repostId || null,
   };
   const { data, error } = await db
@@ -1135,6 +1185,22 @@ function aggregateCommentLikeState(rows) {
   return { likesByComment, currentUserLikes };
 }
 
+function buildCommentTree(comments) {
+  var nodeById = {};
+  var roots = [];
+  comments.forEach(function (c) {
+    nodeById[c.id] = { comment: c, children: [] };
+  });
+  comments.forEach(function (c) {
+    if (c.parent_comment_id && nodeById[c.parent_comment_id]) {
+      nodeById[c.parent_comment_id].children.push(nodeById[c.id]);
+    } else {
+      roots.push(nodeById[c.id]);
+    }
+  });
+  return roots;
+}
+
 async function loadComments(postId, section, repostId) {
   section.innerHTML = '<p class="loading-text">Loading comments…</p>';
 
@@ -1163,22 +1229,25 @@ async function loadComments(postId, section, repostId) {
     empty.textContent = "No comments yet.";
     section.appendChild(empty);
   } else {
-    comments.forEach(function (comment) {
-      var commentEl = createCommentElement(comment, postId, section, repostId, likeState.likesByComment);
+    var tree = buildCommentTree(comments);
+    tree.forEach(function (node) {
+      var commentEl = createCommentElement(node, postId, section, repostId, likeState.likesByComment, 0);
       section.appendChild(commentEl);
     });
   }
 
   // Add comment form (if logged in)
   if (currentUser) {
-    var form = createAddCommentForm(postId, section, repostId);
+    var form = createAddCommentForm(postId, section, null, repostId);
     section.appendChild(form);
   }
 }
 
-function createCommentElement(comment, postId, section, repostId, likesByComment) {
+function createCommentElement(node, postId, section, repostId, likesByComment, depth) {
+  var comment = node.comment;
   var div = document.createElement("div");
   div.className = "comment-item";
+  div.style.marginLeft = Math.min(depth, COMMENT_RENDER_DEPTH_LIMIT) * COMMENT_INDENT_PX + "px";
 
   var header = document.createElement("div");
   header.className = "comment-header";
@@ -1256,6 +1325,23 @@ function createCommentElement(comment, postId, section, repostId, likesByComment
   });
   controls.appendChild(likeBtn);
 
+  if (currentUser) {
+    var replyBtn = document.createElement("button");
+    replyBtn.className = "btn btn-tiny btn-secondary";
+    replyBtn.textContent = "Reply";
+    replyBtn.addEventListener("click", function () {
+      var existing = div.querySelector("form.add-comment-form.reply-form");
+      if (existing) {
+        existing.remove();
+        return;
+      }
+      var replyForm = createAddCommentForm(postId, section, comment.id, repostId);
+      replyForm.classList.add("reply-form");
+      div.appendChild(replyForm);
+    });
+    controls.appendChild(replyBtn);
+  }
+
   if (currentUser && currentUser.id === comment.user_id) {
     var editBtn = document.createElement("button");
     editBtn.className = "btn btn-tiny btn-secondary";
@@ -1280,6 +1366,10 @@ function createCommentElement(comment, postId, section, repostId, likesByComment
     controls.appendChild(deleteBtn);
   }
   if (controls.childNodes.length > 0) div.appendChild(controls);
+
+  node.children.forEach(function (child) {
+    div.appendChild(createCommentElement(child, postId, section, repostId, likesByComment, depth + 1));
+  });
 
   return div;
 }
@@ -1407,14 +1497,14 @@ function attachMentionAutocomplete(textarea) {
   });
 }
 
-function createAddCommentForm(postId, section, repostId) {
+function createAddCommentForm(postId, section, parentCommentId, repostId) {
   var form = document.createElement("form");
   form.className = "add-comment-form";
 
   var input = document.createElement("textarea");
   input.className = "comment-input";
   input.rows = 2;
-  input.placeholder = "Write a comment… (use @username to mention)";
+  input.placeholder = "Write a comment…";
   input.required = true;
 
   var submitBtn = document.createElement("button");
@@ -1438,7 +1528,7 @@ function createAddCommentForm(postId, section, repostId) {
     }
 
     submitBtn.disabled = true;
-    var res = await insertComment(postId, content, repostId || null);
+    var res = await insertComment(postId, content, parentCommentId || null, repostId || null);
     submitBtn.disabled = false;
     if (!res.error) {
       input.value = "";

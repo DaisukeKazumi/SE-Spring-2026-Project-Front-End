@@ -264,7 +264,16 @@ async function fetchComments(postId, repostId) {
 }
 
 async function insertComment(postId, content, parentCommentId, repostId) {
-  const newComment = { post_id: postId, content: content, parent_comment_id: parentCommentId || null, repost_id: repostId || null };
+  if (!currentUser?.id) {
+    return { data: null, error: { message: "You must be signed in to comment." } };
+  }
+  const newComment = {
+    post_id: postId,
+    user_id: currentUser.id,
+    content: content,
+    parent_comment_id: parentCommentId || null,
+    repost_id: repostId || null,
+  };
   const { data, error } = await db
     .from("post_comments")
     .insert([newComment])

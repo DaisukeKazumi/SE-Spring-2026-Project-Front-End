@@ -394,20 +394,23 @@ async function toggleCommentLike(commentId) {
   if (!currentUser?.id) {
     return { liked: false, error: { message: "You must be logged in to like comments." } };
   }
-  if (userCommentLikes[commentId]) {
+  var existingResult = await db
+    .from("comment_likes")
+    .select("comment_id")
+    .eq("comment_id", commentId)
+    .eq("user_id", currentUser.id)
+    .limit(1);
+  if (existingResult.error) {
+    return { liked: !!userCommentLikes[commentId], error: withRlsHint(existingResult.error, "reads from comment_likes") };
+  }
+  var likedOnServer = (existingResult.data || []).length > 0;
+
+  if (likedOnServer) {
     var unlikeResult = await unlikeComment(commentId);
     return { liked: false, error: unlikeResult.error || null };
   }
   var likeResult = await likeComment(commentId);
-  if (!likeResult.error) {
-    return { liked: true, error: null };
-  }
-  // If we hit uniqueness (already liked), toggle by deleting.
-  if (likeResult.error.code === "23505") {
-    var fallbackUnlike = await unlikeComment(commentId);
-    return { liked: false, error: fallbackUnlike.error || null };
-  }
-  return { liked: false, error: likeResult.error };
+  return { liked: !likeResult.error, error: likeResult.error || null };
 }
 
 async function searchMentionProfiles(prefix) {
@@ -1312,6 +1315,7 @@ function createCommentElement(node, postId, section, repostId, likesByComment, d
       return;
     }
     liked = !!res.liked;
+    likeCount = Math.max(0, previousCount + (liked ? 1 : 0) - (previousLiked ? 1 : 0));
     if (liked) {
       userCommentLikes[comment.id] = true;
     } else {

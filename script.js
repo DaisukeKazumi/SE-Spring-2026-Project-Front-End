@@ -265,7 +265,7 @@ async function fetchComments(postId, repostId) {
 
 async function insertComment(postId, content, parentCommentId, repostId) {
   if (!currentUser?.id) {
-    return { data: null, error: { message: "You must be signed in to comment." } };
+    return { data: null, error: { message: "You must be logged in to comment." } };
   }
   const newComment = {
     post_id: postId,

@@ -1,16 +1,17 @@
 BUGS TO FIX
 - Bug that doesn't take the user to the website upon confirmed the email
   - Ultimately, the account IS verified, though
+- Supabase does not allow hosting of multiple website URLs
+  - To view another user's profile, have the profile pop out (similar to the edit post event)
 
 BACKEND
 - Let users create accounts ✅
   - Let users recover accounts if they forgot passwords
-    - Ask prof how to get email/password information
+    - Ask prof how to get email/password information ✅
 - Let users make posts ✅
 - Make the server live (not only run locally) ✅
   - Let users see each others post somehow ✅
   - Make a home feed ✅
-    - Create an algorithm?
 - Add some liking/commenting function ✅
 
 
@@ -31,3 +32,5 @@ Table of all posts:
   https://supabase.com/dashboard/project/emlogmnygnpvtzfgyjet/editor/20912?schema=public&sort=user_id%3Aasc&sort=created_at%3Aasc 
 Website URL:
   https://daisukekazumi.github.io/SE-Spring-2026-Project-Front-End/
+Users in Supabase: 
+  https://supabase.com/dashboard/project/emlogmnygnpvtzfgyjet/auth/users
